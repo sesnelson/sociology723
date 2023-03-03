@@ -1,1 +1,1 @@
-# Homework code and html/docx files for soc723 Spring 2023
+# Homework for Soc 723 Spring 2023
