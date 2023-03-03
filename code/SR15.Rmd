@@ -1,0 +1,627 @@
+---
+title: 'Ch. 15: Measurement Error and Missing Data'
+author: "Samuel Snelson"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+
+library(rethinking)
+
+# visualizing missing data
+library(naniar)
+
+library(patchwork)
+
+library(rstanarm)
+
+theme_set(theme_light(base_family = "Avenir"))
+```
+
+## Easy 
+
+### 15E1.
+
+**Rewrite the Oceanic tools model (from Chapter 11) below so that it assumes measured error on the log population sizes of each society. You don’t need to fit the model to data. Just modify the mathematical formula below.**
+
+Recall that the model from Chapter 11 estimated the number of tools as a function of population size and rating of contact among Northern Pacific Oceanic societies. For our purposes here, we'll only look at the estimated number of tools as a function of the logarithm of an island's population size. In order to incorporate measurement error on the measure of population size, we have to differentiate between the true and observed variables representing population size. Here is a DAG to help visualize this. 
+
+```{r}
+d_coords <- list(
+  x = c(P = 1, T = 1, Pobs = 2, Ep = 3), 
+  y = c(P = 1, T = 0, Pobs = 1, Ep = 1)
+)
+
+dag1 <- ggdag::dagify(T ~ P, 
+                    Pobs ~ P,
+                    Pobs ~ Ep,
+                    coords = d_coords)
+
+(p1 <- ggdag::ggdag(dag1) + 
+  theme_void() + 
+  ylim(-0.5, 1.5) + 
+  xlim(0.5, 3.5))
+
+```
+
+We are ultimately interested in the causal relationship between P (population size) and T (number of tools). However, there is likely some measurement error in the recording of population size for each island, so what we actually have access to is the observed population size for each island. This measurement error is caused by some set of processes given by Ep. 
+
+When we represent these relationships mathematically, we recognize that, as we have modeled it, the number of tools a society has is a function of that society's true log population. This sounds strange because this is a latent variable, but this is the causal model we have imposed. The observed population size is a function of the true population size (which we impose a prior distribution upon) and a standard deviation for each observation. This specification is slightly different than McElreath's model form on pg. 496 because the Kline dataset doesn't have standard errors for the islands - so we estimate them as parameters. 
+
+$$
+\begin{align}
+
+T_i & \sim \text{Poisson}(\mu_i) \\ 
+\log(\mu_i) & = \alpha + \beta_p \log(P_{true[i]}) \\
+P_{obs[i]} & \sim \text{Normal}(P_{true[i]}, \sigma_{p[i]}) \\ 
+P_{true[i]} & \sim \text{Normal}(0, 1) \\
+\alpha & \sim \text{Normal}(0, 1) \\ 
+\beta_p & \sim \text{Normal}(0, 1) \\ 
+\sigma_{p[i]} & \sim  \text{Exponential}(1)
+\end{align}
+$$
+
+
+### 15E2. 
+
+**Rewrite the same model so that it allows imputation of missing values for log population. There aren’t any missing values in the variable, but you can still write down a model formula that would imply imputation, if any values were missing.**
+
+It is interesting to think about what it means to account for measurement error and missing data and comparing how we can model these situations. I"ll write out what the model could look like and we'll see something interesting. 
+
+
+$$
+\begin{align}
+
+T_i & \sim \text{Poisson}(\mu_i) \\ 
+\log(\mu_i) & = \alpha + \beta_p \log(P_i) \\ 
+P_i & \sim \text{Normal}(\nu, \sigma_p) \\ 
+\alpha & \sim \text{Normal}(0, 1.5) \\ 
+\beta_p & \sim \text{Normal}(0, 1) \\ 
+\nu & \sim \text{Normal}(0, 1) \\ 
+\sigma_p & \sim \text{Exponential}(1)
+
+\end{align}
+$$
+
+Looking closely at these model form, they appear to be doing the same thing. Whether we are modeling the "true" distribution of a variable accounting for measurement error in observations or the distributions of missing values of a variable, both situations are modeling parts or whole of the variable we don't have complete access to. Quite cool. 
+
+However, I should note that I am observing this with the pretty simple scenario of one independent variable. Having multiple correlated covariates can complicate the coding of things, but the message of their similarity remains. 
+
+## Medium 
+
+### 15M1.
+
+**Using the mathematical form of the imputation model in the chapter, explain what is being assumed about how the missing values were generated.**
+
+The short answer of this question is that the missing data are assumed to be draws from the prior distributions which one assigns to the missing data parameters. 
+
+To take a closer look, I'll look at an example McElreath uses about the energy content of milk from pg. 506. Its only a matter of time until the sociologists figure out all these structures and institutions just come down to milk. 
+
+Recall that $K_i$ refers to the energy content of a primate mother's milk measured in kilacalories per gram (or something), $B_i$ refers to percentage of a primate's brain constituted of neocortex, and $\log(M_i)$ refers to the logarithm of body mass of a primate. Our concern here is with the imputation of missing neocortex percentage observations for primates. 
+
+$$
+\begin{align}
+K_i & \sim \text{Normal}(\mu_i, \sigma) \\ 
+\mu_i & = \alpha + \beta_b B_i + \beta_m \log(M_i) \\ 
+B_i & \sim \text{Normal}(\nu, \sigma_b) \\ 
+\alpha, \beta_b, \beta_m & \sim \text{Normal}(0, 0.5) \\ 
+\nu & \sim \text{Normal}(0, 0.5) \\
+\sigma, \sigma_b & \sim \text{Exponential}(1)
+\end{align}
+$$
+
+What is being assumed about the imputation of missing observations of neocortext percentage? McElreath states that the $B_i$ line, "when observed... is a likelihood, just like any old linear regression. The model learns the distributions of $\nu$ and $\sigma_b$ that are consistent with the data [i.e., data overpower priors]. But when $B_i$ is missing, and therefore a parameter, that same line is interpreted as a prior. Since the parameters $\nu$ and $\sigma_b$ are also estimated, the prior is learned from the data, just like the varying effects in previous chapters" (506). That is to say that missing data are estimated as parameters with the prior distribution given to that (set of) parameter(s). 
+
+
+
+```{r}
+
+data(milk)
+
+d <- milk %>%
+  
+  mutate(b_prop = neocortex.perc / 100, 
+         mlog = log(mass), 
+         k_std = standardize(kcal.per.g), 
+         b_std = standardize(b_prop), 
+         mlog_std = standardize(mlog), 
+         spec_id = row_number()) %>% 
+  
+  select(k_std, b_std, mlog_std, spec_id)
+
+```
+
+Let's first estimate the model without any imputation (complete case analysis) and then impute and see how this effects the estimation. 
+
+```{r, message = FALSE, warning = FALSE, cache = TRUE}
+
+drop <- d %>% 
+  drop_na()
+
+# regular model with list-wise deletion of missing data 
+m1 <- ulam(
+   alist(
+     k_std ~ dnorm(mu, sigma), 
+     mu <- a + bB*b_std + bM*mlog_std, 
+     a ~ dnorm(0, 0.5), 
+     c(bB, bM) ~ dnorm(0, 0.5), 
+     sigma ~ dexp(1)), 
+   data = drop, 
+   chains = 4, 
+   cores = 4)
+
+```
+
+Now we'll run the imputation model. 
+
+
+```{r, message = FALSE, warning = FALSE, cache = TRUE} 
+m2 <- ulam(
+  alist(
+    k_std ~ dnorm(mu, sigma),
+    mu <- a + bB*b_std  + bM*mlog_std, 
+    b_std ~ dnorm(nu, sigma_B), 
+    c(a, nu) ~ dnorm(0, 0.5), 
+    c(bB, bM) ~ dnorm(0, 0.5), 
+    c(sigma, sigma_B) ~ dexp(1)), 
+  data = d, 
+  chains = 4, 
+  cores = 4)
+```
+
+
+```{r}
+plot(coeftab(m1, m2), pars = c("bB", "bM"))
+```
+
+Consistent with McElreath's findings on pg. 508, the imputation model is slightly more efficient but doesn't change the estimation in any real way. 
+
+I don't like the following code a whole lot but we can see what the imputed data actually look like relative to the observed data. Prepare yourself to see ghosts walking around a ggplot graveyard... since the data are fabricated. 
+
+```{r}
+
+post1 <- extract.samples(m2)
+
+b_impute_mu <- apply(post1$b_std_impute, 2, mean)
+
+b_impute_ci <- apply(post1$b_std_impute, 2, PI)
+
+imp <- tibble(
+  b_imp = b_impute_mu, 
+  imp_ci_low = b_impute_ci[1,], 
+  imp_ci_high = b_impute_ci[2,],
+  spec_id = d$spec_id[is.na(d$b_std) == TRUE], 
+  k_std = d$k_std[d$spec_id[is.na(d$b_std) == TRUE]]
+)
+
+imp_all <- left_join(d, imp, by = c("spec_id", "k_std")) %>% 
+  mutate(b_std = if_else(is.na(b_std) == TRUE, b_imp, b_std),
+         b_imped = if_else(is.na(b_imp) == TRUE, 0, 1)) %>% 
+  select(k_std, b_std, imp_ci_low, imp_ci_high, b_imped)
+
+```
+
+
+```{r, warning = FALSE}
+(p2 <- ggplot(imp_all) +
+    geom_linerange(aes(b_std, k_std, 
+                        xmin = imp_ci_low, 
+                        xmax = imp_ci_high)) +
+    geom_point(aes(b_std, k_std, 
+                   color = factor(b_imped)), 
+               size = 2.5) +
+    labs(title = "Neocortex Percentage and Milk Energy Content", 
+         subtitle = "Red are observed and blue are imputed with 95% CI", 
+         x = "neocortex percentage (std)", 
+         y = "kcal milk (std)", 
+         caption = "Data: Milk package") + 
+  theme(legend.position = "none"))
+```
+
+We can see that the imputed values have relatively wide 95% interval ranges. Interestingly also we can notice that there is a slight positive relationship in the distribution of imputed values - likely due to the slight positive relationship between neocortex percentage and kcal milk. 
+
+However, one of the concerns that we have with using imputed data is that it may produce misleading values. In other words, the relationship may not be the same. To check this, we can quickly estimate linear models for the dropped data and the imputed data and see how different they are. 
+
+```{r, warning = FALSE}
+(p3 <- ggplot(imp_all) + 
+  geom_smooth(aes(b_std, k_std), 
+                method = "lm", 
+                color = "cornflowerblue") + 
+    geom_smooth(data = d, 
+                aes(b_std, k_std), 
+                method = "lm", 
+                color = "firebrick") + 
+  labs(title = "Predicted Milk Energy by Neocortext Percentage", 
+         subtitle = "Red is observed and blue is imputed", 
+         x = "neocortex percentage (std)", 
+         y = "kcal milk (std)", 
+         caption = "Data: Milk package") + 
+  theme(legend.position = "none"))
+```
+
+The predictions are slightly different with respect to their lines but ultimately, they both are not differentiable given their interval estimated are approximately the same. 
+
+
+### 15M2.
+
+**Reconsider the primate milk missing data example from the chapter. This time, assign B a distribution that is properly bounded between zero and 1. A beta distribution, for example, is a good choice.**
+
+With this question, we'll continue with the milk data and modify the prior distribution for neocortex percentage such that it is bounded between 0 and 1 (percentage can only be between 0 and 1!). 
+
+Here because we are modeling neocortex percentage with a beta distribution, we cannot standardize it, so we'll undo that. 
+
+```{r}
+d2 <- milk %>%
+  
+  mutate(b_prop = neocortex.perc / 100, 
+         mlog = log(mass), 
+         k_std = standardize(kcal.per.g), 
+         mlog_std = standardize(mlog), 
+         spec_id = row_number()) %>% 
+  
+  select(k_std, b_prop, mlog_std, spec_id)
+```
+
+
+
+$$
+\begin{align}
+K_i & \sim \text{Normal}(\mu_i, \sigma) \\ 
+\mu_i & = \alpha + \beta_b B_i + \beta_m \log(M_i) \\ 
+B_i & \sim \text{Beta}(\alpha_{beta}, \beta_{beta}) \\ 
+\alpha_{beta}, \beta_{beta} & \sim \text{Exponential}(1) \\ 
+\alpha, \beta_b, \beta_m & \sim \text{Normal}(0, 0.5) \\ 
+\sigma & \sim \text{Exponential}(1)
+\end{align}
+$$
+
+```{r, cache = TRUE, results = FALSE, eval = FALSE} 
+
+m3 <- ulam(
+  alist(
+    k_std ~ dnorm(mu, sigma),
+    mu <- a + bB * b_prop + bM * mlog_std,
+
+    b_prop ~ dbeta(alpha, beta),
+    alpha ~ dnorm(5, 0.5),
+    beta ~ dnorm(5, 0.5),
+    
+    vector[12]:B_impute ~ dbeta(1, 1), 
+    
+    a ~ dnorm(0,0.5),
+    c(bB,bM) ~ dnorm(0,0.5),
+    sigma ~ dexp(1)),
+  data = d2, 
+  chains = 4, 
+  cores = 4)
+
+```
+
+I'm not sure exactly why this isn't working out. I considered the priors to be sensible in that `dbeta(alpha, beta)` where `alpha ~ dnorm(5, 0.5)` and `beta ~ dnorm(5, 0.5)`. This produces a beta distribution analogous to the normal distribution but bounded by 0 and 1 (that is, 0.5 is the most likely and probability mass decreases symmetrically). However, I'm getting errors that the Stan model doesn't contain errors. 
+
+However, I can surmise that making the neocortex percentage variable's prior more realistic would likely improve the accuracy of the imputation (albeing I imagine marginally). 
+
+
+### 15M3.
+
+**Repeat the divorce data measurement error models, but this time double the standard errors. Can you explain how doubling the standard errors impacts inference?**
+
+With the divorce data measurement models, we modeled measurement error on the outcome alone and on the outcome and a covariate together. 
+
+Measurement error on predictor: 
+- When we model measurement error on the outcome, we are estimating the observed data as a function of the *true* distribution of the variable and its observed standard error. 
+
+$$
+\begin{align}
+D_{OBS, i} & \sim \text{Normal}(D_{TRUE, i}, D_{SE, i}) \\ 
+D_{TRUE, I} & \sim \text{Normal}(\mu_i, \sigma) \\ 
+\mu_i & = \alpha + \beta_a A_i + \beta_m M_i \\
+\alpha, \beta_a, \beta_m & \sim \text{Normal}(0, 1) \\ 
+\sigma & \sim \text{Exponential}(1)
+\end{align}
+$$
+
+Measurement error on both the outcome and covariate: 
+- When we model measurment error for the outcome and some set of covariates, we are estimating the same observed measure of the outcome as well as the observed covariate as a function of its *true* distribution and observed standard error. 
+$$
+\begin{align}
+D_{OBS, i} & \sim \text{Normal}(D_{TRUE, i}, D_{SE, i}) \\ 
+D_{TRUE, I} & \sim \text{Normal}(\mu_i, \sigma) \\ 
+\mu_i & = \alpha + \beta_a A_i + \beta_m M_{TRUE, i} \\
+M_{OBS, i} & \sim \text{Normal}(M_{TRUE,i}, M_{SE, i}) \\ 
+M_{TRUE, i} & \sim \text{Normal}(0, 1) \\ 
+\alpha, \beta_a, \beta_m & \sim \text{Normal}(0, 1) \\ 
+\sigma & \sim \text{Exponential}(1)
+\end{align}
+$$
+
+
+
+```{r}
+d2_coords <- list(
+  x = c(A = 0, M = 1, D = 1, Mobs = 2, Dobs = 2, Em = 3, Ed = 3), 
+  y = c(A = 1, M = 2, D = 0, Mobs = 2, Dobs = 0, Em = 2, Ed = 0)
+)
+
+dag2 <- ggdag::dagify(Dobs ~ Ed, 
+                      Dobs ~ D,
+                      D ~ M + A, 
+                      M ~ A, 
+                      coords = d2_coords)
+
+
+dag3 <- ggdag::dagify(Mobs ~ Em, 
+                      Dobs ~ Ed, 
+                      Mobs ~ M, 
+                      Dobs ~ D,
+                      D ~ M + A, 
+                      M ~ A, 
+                      coords = d2_coords)
+
+(p4 <- ggdag::ggdag(dag2) +
+    theme_void() + 
+    labs(title = "Divorce Rate on Marriage Rate and Median Age at Marriage across States", 
+         subtitle = "measurement error modeled on outcome") +
+    xlim(-0.25, 3.5) + 
+    ylim(-0.75, 2.75) + 
+    theme(plot.title = element_text(hjust = 0.5, vjust = -10),
+          plot.subtitle = element_text(hjust = 0.10, vjust = -12)))
+
+
+(p5 <- ggdag::ggdag(dag3) +
+    theme_void() + 
+    labs(title = "Divorce Rate on Marriage Rate and Median Age at Marriage across States", 
+         subtitle = "measurement error modeled on outcome and covariate") +
+    xlim(-0.25, 3.5) + 
+    ylim(-0.75, 2.75) + 
+    theme(plot.title = element_text(vjust = -10, hjust = 0.5), 
+          plot.subtitle = element_text(vjust = -12, hjust = 0.13)))
+  
+```
+
+What we'll go ahead and do is compare the models with doubled standard errors to the ones McElreath computed in the chapter. 
+
+```{r}
+data(WaffleDivorce)
+
+# We'll just keep the measures of interest - the variables and their standard error when available
+
+d3 <- WaffleDivorce 
+
+dlist <- list(
+  D_obs = standardize(d3$Divorce), 
+  D_sd = d3$Divorce.SE / sd(d3$Divorce),
+  D2_sd = 2 * (d3$Divorce.SE / sd(d3$Divorce)),
+  M_sd = d3$Marriage.SE / sd(d3$Marriage),
+  M2_sd = 2 * (d3$Marriage.SE / sd(d3$Marriage)),
+  M = standardize(d3$Marriage), 
+  A = standardize(d3$MedianAgeMarriage), 
+  N = nrow(WaffleDivorce)
+)
+```
+
+```{r, message = FALSE, warning = FALSE, cache = TRUE}
+
+# measurement error on outcome 
+m4 <- ulam(
+  alist(
+    D_obs ~ dnorm(D_true, D_sd), 
+    vector[N]:D_true ~ dnorm(mu, sigma), 
+    mu <- a + bA*A + bM*M, 
+    a ~ dnorm(0, 0.2), 
+    bA ~ dnorm(0, 0.5), 
+    bM ~ dnorm(0, 0.5), 
+    sigma ~ dexp(1)), 
+  data = dlist,
+  chains = 4, 
+  cores = 4)
+
+
+# measurement error on outcome and covariate 
+m5 <- ulam(
+  alist(
+    D_obs ~ dnorm(D_true, D_sd), 
+    vector[N]:D_true ~ dnorm(mu, sigma), 
+    mu <- a + bA*A + bM*M, 
+    a ~ dnorm(0, 0.2), 
+    c(bA, bM) ~ dnorm(0, 0.5),
+    M ~ dnorm(M_true, M_sd),
+    vector[N]:M_true ~ dnorm(0, 1),
+    sigma ~ dexp(1)), 
+  data = dlist, 
+  chains = 4, 
+  cores = 4)
+
+
+# measurement error on outcome 2xSE
+m6 <- ulam(
+  alist(
+    D_obs ~ dnorm(D_true, D2_sd), 
+    vector[N]:D_true ~ dnorm(mu, sigma),
+    mu <- a + bA*A + bM*M, 
+    a ~ dnorm(0, 0.2), 
+    bA ~ dnorm(0, 0.5), 
+    bM ~ dnorm(0, 0.5), 
+    sigma ~ dexp(1)), 
+  data = dlist,
+  chains = 4, 
+  cores = 4)
+
+
+# measurement error on outcome and covariate 2xSE
+m7 <- ulam(
+  alist(
+    D_obs ~ dnorm(D_true, D2_sd), 
+    vector[N]:D_true ~ dnorm(mu, sigma), 
+    mu <- a + bA*A + bM*M, 
+    a ~ dnorm(0, 0.2), 
+    c(bA, bM) ~ dnorm(0, 0.5),
+    M ~ dnorm(M_true, M2_sd),
+    vector[N]:M_true ~ dnorm(0, 1),
+    sigma ~ dexp(1)), 
+  data = dlist, 
+  chains = 4, 
+  cores = 4)
+```
+
+I've had a bit of difficulty getting these models to run smoothly. Diagnostically, I'm getting some $\hat{R}$s above 1 as soon as I incorporate two levels of measurement error modeling and for the same models I'm getting quite quite low numbers of effective samples. Given this I am apprehensive to say how these models are different besides their being different because of the standard error difference. Given a larger standard error for the outcome and predictor, I would expect that the posterior distributions for these parameters would be wider. 
+
+```{r}
+
+plot(coeftab(m4, m5, m6, m7), pars = c("bM"))
+```
+
+
+### 15M4.
+
+**Simulate data from this DAG: X -> Y -> Z. Now fit a model that predicts Y using both X and Z. What kind of confound arises, in terms of inferring the causal influence of X on Y?** 
+
+We'll simulate this relationship where x is causally related to y which is then causally related to z (with no direct causal effect of x on z). 
+
+
+Just for a quick visual foray into this matter, we'll simulate some relationships where y and z are either half or twice x and y respectively. 
+
+
+```{r}
+d4 <- tibble(
+  x = rnorm(1e4, 0, 1), 
+  y1 = rnorm(1e4, 0.5 * x, 1), 
+  y2 = rnorm(1e4, 2 * x, 1),
+  z1 = rnorm(1e4, 0.5 * y1, 1),
+  z2 = rnorm(1e4, 2 * y2, 1),
+  z3 = rnorm(1e4, 0.5 * y2, 1), 
+  z4 = rnorm(1e4, 2 * y1, 1), 
+  ylab = if_else(y1 >= mean(y1) | y2 >= mean(y2), 1, 0)
+)
+
+p6 <- ggplot(d4, aes(x, z1)) + 
+  geom_point(aes(color = factor(ylab)), 
+             alpha = 0.1) + 
+  geom_smooth(aes(color = factor(ylab)), 
+              method = "lm") +
+  geom_smooth(method = "lm") +
+  theme(legend.position = "none")
+
+p7 <- ggplot(d4, aes(x, z2)) + 
+  geom_point(aes(color = factor(ylab)), 
+             alpha = 0.1) + 
+  geom_smooth(aes(color = factor(ylab)), 
+              method = "lm") +
+  geom_smooth(method = "lm") + 
+  theme(legend.position = "none")
+
+p8 <- ggplot(d4, aes(x, z3)) + 
+  geom_point(aes(color = factor(ylab)), 
+             alpha = 0.1) + 
+  geom_smooth(aes(color = factor(ylab)), 
+              method = "lm") +
+  geom_smooth(method = "lm") + 
+  theme(legend.position = "none")
+
+p9 <- ggplot(d4, aes(x, z4)) + 
+  geom_point(aes(color = factor(ylab)), 
+             alpha = 0.1) + 
+  geom_smooth(aes(color = factor(ylab)), 
+              method = "lm") +
+  geom_smooth(method = "lm") + 
+  theme(legend.position = "none")
+
+(p10 <- (p6 + p7) / (p8 + p9))
+
+```
+
+The darker blue line is the overall relationship between x and z. The lighter blue and red lines are the relationship between x and z when y is adjusted for (dichotomized to be above or below average). In some situations, adjusting for y essentially makes the relationship vanish and in other cases, it can become stronger. These are not exhaustive of course, but just a little visualization of the effect of adjusting or not adjusting for a confound. 
+
+
+```{r, message = FALSE, warning = FALSE, cache = TRUE}
+
+d5 <- tibble(
+  x = rnorm(100, 0, 1), 
+  y = rnorm(100, 5*x, 1), # 5y for every x
+  z = rnorm(100, 10*y, 1) # 10z for every y
+)
+
+m8 <- ulam(
+  alist(
+    z ~ dnorm(mu, sigma),
+    mu <- a + bx*x + by*y, 
+    c(a, bx, by) ~ dnorm(0, 1), 
+    sigma ~ dexp(1)), 
+  data = d5)
+
+# Effects of x and y
+precis(m8)
+```
+
+This is the classic confound in the form of the pipe. Information about x is transmitted to y via their causal relation and that information about x in y is propogated into y's causal relation with z. The precis has shown us the separate direct effects between x and z and y and z. The parameter for y is well estimated. As we have defined out DAG and simulation, there is direct effect of x on z, so the parameter has been created out of a statistical aberration. Depending on the standard error, the model is quite confidence that x has a direct effect on z - because we have conditioned on y. 
+
+
+
+### 15M5.
+
+**Return to the singing bird model, m15.9, and compare the posterior estimates of cat presence (PrC1) to the true simulated values. How good is the model at inferring the missing data? Can you think of a way to change the simulation so that the precision of the inference is stronger?** 
+
+
+The simulation could be improved by incorporating information from the measures we have into our estimation of the imputed values. Conceptually, all variables in the model as well as unobserved confounds may contribute to the likelihood that data are missing. Certain cats may prefer to not to be at home for any reason (whether caused by its own variable or by the singing). If we were to estimate the imputed data as a function both of the observed data as well as the other measures (via a correlation matrix approach for example), then this may increase the efficiency of the estimates.  
+
+
+### 15M6.
+
+**Return to the four dog-eats-homework missing data examples. Simulate each and then fit one or more models to try to recover valid estimates for S -> H** 
+
+
+```{r}
+# Completely random
+sim_mcar <- tibble(
+  s = rnorm(1e4, 0, 1), 
+  # true effect of S -> H is 0.6
+  h = rbinom(1e4, 10, inv_logit( 0.6 * s)),
+  d = rbern(1e4, 0.5), # doesn't depend on anything
+  hm = ifelse(d == 1, h, NA)
+)
+
+# Missing at random (within model influence) 
+sim_mar <- tibble(
+  s = rnorm(1e4, 0, 1), 
+  h = rbinom(1e4, 10, inv_logit(0.6 * s)), 
+  d = rbern(1e4, if_else(s > 0, 0.8, 0.2)), # over avg effort is eaten
+  hm = ifelse(d == 1, NA, h) # if D==1, data missing 
+)
+
+# Missing not at random (within model influence by unmeasurable) 
+sim_mnar1 <- tibble(
+  s = rnorm(1e4, 0, 1), 
+  h = rbinom(1e4, 10, inv_logit(0.6 * s)), 
+  d = rbern(1e4, if_else(h > mean(h), 0.8, 0.2)), # above avg
+  hm = ifelse(d == 1, NA, h)
+)
+
+# Missing not at random (unobserved influence)
+sim_mnar2 <- tibble(
+  s = rnorm(1e4, 0, 1),
+  x = rnorm(1e4, 0, 1), # standardized measure of noise 
+  h = rbinom(1e4, 10, inv_logit(0.6 * s - 0.15 * x)),
+  d = rbern(1e4, if_else(x > 0, 0.8, 0.2)), 
+  hm = ifelse(d == 1, NA, h) # loud leads to missing 
+)
+
+```
+
+
+I'm having some trouble getting my models to run, so I'll write them out to show my thought process.
+
+
+If we are dealing with the MCAR situation with the dog eating homework, then we can either drop cases or impute to improve efficiency. 
+
+I am not quite sure yet how to impute with a binomial outcome and with `ulam()`. 
+
+If we are dealing with the MAR situation where dog eating homework is a function of studying, then the measure of studying effort can be used to estimate imputed values of the outcome (although I'm not totally clear on whether or not it is appropriate to impute observations of an outcome).
+
+
+If we are dealing with the MNAR situation, then we may want to try to be clever about finding some form of descendant of the unobserved influence so that we can account for some of its effect on the missingness process. 
+
+
+

@@ -1,0 +1,436 @@
+---
+title: "HW: Modern Dive Ch. 5"
+subtitle: "Twitch Data Exercises" 
+author: "Samuel Snelson"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    theme: paper
+    df_print: kable
+    toc: TRUE
+    toc_float: 
+      collapsed: FALSE
+      smooth_scroll: FALSE
+    
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(janitor)
+library(broom)
+library(patchwork)
+theme_set(theme_light(base_family = "Avenir"))
+```
+
+
+Importing twitch data from Steve's github and cleaning data
+
+```{r}
+twitch_data <- read.csv("https://raw.githubusercontent.com/vaiseys/223_course/main/Data/twitchdata-update.csv") %>% 
+  clean_names()
+```
+
+
+## Q1
+
+### Random 5 Streamers
+
+Is the number of followers a streamer have an indication of their viewership? 
+
+```{r}
+twitch_data %>% 
+  select(followers, average_viewers, peak_viewers) %>% 
+  sample_n(size = 5)
+
+```
+
+
+Among these sampled streamers, it appears that they have many less average viewers than followers. This is unsurprising given the ease of following relative to watching on a regular basis. However, it is also interesting in light of YouTubers' recent efforts to get their following to match their views (hence like and subscribe). 
+
+
+
+Just to get a different view of this, let's briefly take a closer look at this relation - having many more followers than average viewers - across the whole range of streamers. 
+
+
+```{r}
+
+p1 <- twitch_data %>%  
+  mutate(follow_watch = followers / average_viewers) %>% 
+  ggplot(aes(follow_watch)) + 
+  geom_histogram() + 
+  labs(x = "",
+       title = "Ratio of Followers to Average Viewers for Selected Twitch Streamers")
+
+# Compressing the range to make values close to 0 visible
+p2 <- p1 + 
+  xlim(0, 500) +
+  labs(title = "", 
+       subtitle = "Range compressed - includes 96.9% of all streamers.")
+
+# Using patchwork to combine plots
+p3 <- p1 / p2 + 
+  labs(x = "Average Viewers / Followers")
+
+# Checking what proportion of streamers have less than 5% viewer/followers ratios - 96.9% 
+twitch_data %>% 
+  mutate(follow_watch = followers / average_viewers) %>% 
+  filter(follow_watch <= 500) %>% 
+  summarize(count = n() / 1000)
+
+# Showing plot
+p3
+
+```
+
+Across the whole range of streamers on twitch, streamers generally have hundreds of times more followers than average viewers. 
+
+
+### Summarize following and average viewership 
+
+```{r}
+twitch_data %>% 
+  select(followers, average_viewers) %>% 
+  summary()
+```
+
+How the values increase relatively slowly and shoot up at the end indicate that these distributions are right skewed. Thinking about streaming platforms, just a few people have the largest followings and most people have somewhere less than them. Comparing these distributions, it is also apparent than streamers generally have many more followers than average viewers. 
+
+### Scatterplot (raw and transformed)
+
+```{r}
+p4 <- ggplot(twitch_data, aes(followers, average_viewers)) + 
+  geom_point() + 
+  labs(title = "Twitch Streamer Followers and Average Viewers", 
+       x = "followers", 
+       y = "average viewers")
+
+# Showing plot
+p4
+```
+
+Given how right skewed these variables are, the scatterplot of their raw values doesn't provide much view on whats happening among most streamers. 
+
+Let's transform the variables to get a better view. 
+
+```{r}
+
+# The textbook uses log base 10. I'm doing both base 10 and base *e* to see what the difference is. 
+twitch_data <- twitch_data %>% 
+  mutate(log_followers = log(followers), 
+         log_viewers = log(average_viewers), 
+         log10_followers = log10(followers), 
+         log10_viewers = log10(average_viewers)) 
+
+p5 <- ggplot(twitch_data, aes(log_followers, log_viewers)) + 
+  geom_point() + 
+  labs(title = "Twitch Streamer Followers and Average Viewers", 
+       caption = "Note: Both variables are natural log transformed.",
+       x = "followers", 
+       y = "average viewers")
+
+p6 <- ggplot(twitch_data, aes(log10_followers, log10_viewers)) + 
+  geom_point() + 
+  labs(title = "Twitch Streamer Followers and Average Viewers", 
+       caption = "Note: Both variables are log transformed.",
+       x = "followers", 
+       y = "average viewers")
+
+# The difference in log base is of equal proportion scaling. I'll just go with base *e* out of preference 
+
+# Showing plot
+p5
+
+```
+
+After transforming both variables, a strong positive association emerges between the logged follower and viewer variables. This indicates that there is a positive association; however, the strength is likely visually overstated because of the transformation. 
+
+
+## Q2
+
+### Interpreting regression with transformed variables
+
+Let's take the variables we have just created and model the relationship. 
+
+```{r}
+fit1 <- lm(log_viewers ~ log_followers, 
+           data = twitch_data)
+
+# or summary(fit1)
+tidy(fit1)
+```
+
+A 10% increase in followers among twitch streamers is associated with a 5.88% increase in the average number of viewers. 
+
+## Q3
+
+### Modeling relationship between followers and viewership 
+
+```{r}
+# Getting fitted values and residuals 
+  # fitted values are the predicted values of y for each set of covariate combinations. Residuals are the difference with respect to y between the observed and predicted values. 
+
+pred_data <- augment(fit1)
+
+```
+
+Plotting observed data and fitted values
+
+```{r}
+p6 <- ggplot(pred_data, aes(log_followers, log_viewers)) + 
+  geom_point(alpha = 0.75) + 
+  geom_line(aes(log_followers, .fitted), 
+            col = "cornflowerblue", 
+            linewidth = 1.25) + 
+  labs(title = "Fitted Model on Raw Data", 
+       subtitle = "Followers and Average Viewership (natural log transformed)", 
+       x = "followers", 
+       y = "average viewers")
+
+# Showing plot
+p6
+
+```
+
+On the natural log scale, the model reasonably captures the relationship between followers and average followers. 
+
+```{r}
+p7 <- ggplot(pred_data, aes(log_followers, .resid)) + 
+  geom_point(alpha = 0.75) + 
+  geom_hline(yintercept = 0,
+             linewidth = 1.25,
+             color = "grey", 
+             alpha = 0.3) + 
+  labs(title = "Followers on Model Residuals", 
+       subtitle = "Followers on natural log scale", 
+       x = "followers", 
+       y = "residuals")
+
+# Showing plot
+p7
+
+```
+
+
+Looking at the distribution of residuals, there does not appear to be any systematic concentrations of residuals. This indicates that the model (that is, the line) does not systematically over or underestimate the data. 
+
+
+## Q4
+
+### Exporatory Data Analysis for categorical x numerical 
+
+To begin looking at the raw data, I'll look at some random samples of average viewers across languages. 
+
+Here, I pull 1 randomly selected streamers from each language and show their average viewers (There is only 1 streamer each for Greek, Finish, Slovak, and Swedish, and 2 for Hungarian). 
+
+```{r}
+twitch_data %>% 
+  select(language, average_viewers) %>% 
+  group_by(language) %>% 
+  sample_n(size = 1)
+```
+
+This raw data is nice to look at but isn't so informative if we want to discern the relation between languages spoken and average viewers. 
+
+We can try to get a better sense by looking at averages among the average viewership of streamers who speak different languages. 
+
+```{r}
+twitch_data %>% 
+  group_by(language) %>% 
+  summarize(average_viewers_language = mean(average_viewers)) %>% 
+  arrange(desc(average_viewers_language))
+  
+```
+
+This view at the data indicates that, on average, Twitch streamers who speak Russian, Spanish, Arabic, English, and Japanese are in the top 5 of average viewership. 
+
+### Visualizing average viewership across languages
+
+Let's plot the distributions of average viewership across languages. 
+
+First, we'll visualize the distribution of average viewers by language without doing any transformations. 
+
+```{r}
+p8 <- ggplot(twitch_data, 
+             aes(reorder(language, average_viewers),
+                 average_viewers)) +
+  geom_boxplot() + 
+  labs(title = "Average Viewers by Twitch Streamer Language", 
+       x = "language", # axis titles are swapped 
+       y = "average viewers") + 
+  coord_flip()
+
+# Showing plot 
+p8
+
+```
+
+Just with the raw data, it is difficult to compare between languages because of how right skewed the distributions are. To get a better look at the differences between languages, we'll first look more closely at streamers with less than or equal to 10,000 average viewers. This excludes about 10% of the data but gives us a better look at the majority of the distributions. 
+
+```{r}
+p9 <- twitch_data %>% 
+  ggplot(aes(reorder(language, average_viewers), 
+             average_viewers)) + 
+  geom_boxplot() + 
+  labs(title = "Average Viewers by Twitch Streamer Language", 
+       x = "language", # axis titles are swapped 
+       y = "average viewers") + 
+  ylim(0, 10000) +
+  coord_flip()
+
+# Showing plot 
+p9
+
+# Seeing how much is excluded by filtering to >= 10000 (about 10%)
+d <- twitch_data %>%
+  group_by(language) %>% 
+  summarize(raw = n())
+
+d2 <- twitch_data %>% 
+  filter(average_viewers <= 10000) %>% 
+  group_by(language) %>% 
+  summarize(filter = n())
+
+d3 <- full_join(d, d2, by = "language") %>% 
+  summarize(raw = sum(raw), 
+            filter = sum(filter), 
+            diff = raw - filter, 
+            prop = diff / raw)
+
+
+```
+
+Zooming in on the majority of streamers with less than 10,000 average viewers gives us a better picture of the differences between languages. 
+
+For another perspective on these rankings, let's see how it would look by using the natural log transformed distributions. 
+
+```{r}
+p10 <- ggplot(twitch_data, 
+             aes(reorder(language, log_viewers), 
+                 log_viewers)) + 
+  geom_boxplot() + 
+  labs(title = "Average Viewers by Twitch Streamer Language", 
+       subtitle = "1-unit increase is about 2.5x difference",
+       caption = "Note: Average viewers is natural log transformed",
+       x = "language", 
+       y = "average viewers") +
+  coord_flip()
+
+p10
+
+```
+
+This view provides mostly the same information besides a slightly different ranking. 
+
+## Q5
+
+### Regression with categorical variable 
+
+Defining language as a factor variable with English as the reference category.
+
+```{r}
+twitch_data <- twitch_data %>% 
+  mutate(language_fac = as.factor(language),
+         language_fac = relevel(language_fac, ref = "English"))
+```
+
+Estimating and visualizing average viewers by language with natural log transformation on outcome. 
+
+
+```{r}
+fit3 <- lm(log_viewers ~ language_fac, 
+         data = twitch_data)
+
+fit3_tidy <- tidy(fit3)
+
+
+fit3_pred <- augment(fit3, se_fit = TRUE) %>% 
+  distinct(language_fac, .fitted, .se.fit) %>% 
+  mutate(lower = .fitted + qnorm(0.025) * .se.fit, 
+         upper = .fitted + qnorm(0.975) * .se.fit) %>% 
+  rename("language" = language_fac)
+
+
+viewer_data <- twitch_data %>% 
+  select(language, log_viewers)
+
+
+fit3_preddata <- full_join(fit3_pred, viewer_data, by = "language")
+
+p10 <- ggplot(fit3_preddata) + 
+  
+  # Boxplots of raw data 
+  geom_boxplot(aes(x = log_viewers, 
+                   y = reorder(language, log_viewers)), 
+               color = "darkgrey") + 
+  
+  # Point ranges of predicted values with 95% CI
+  geom_pointrange(aes(x = .fitted, 
+                      y = reorder(language, log_viewers), 
+                      xmin = lower, 
+                      xmax = upper), 
+                  color = "firebrick") + 
+  
+  labs(title = "Average Viewership by Twitch Streamer Language", 
+       subtitle = "Red shows predicted average viewers and 95% CI", 
+       x = "average viewers", 
+       y = "language", 
+       caption = "\n Note: Note: Average viewers is natural log transformed. \n 1-unit difference is about 2.5x difference.")
+
+# Would be cool to display title words with same color used (the word "Red" is displays in the same color and Grey (maybe with ggtext package))
+
+# Show plot
+p10
+```
+
+Looking at the raw data as well as the model's predicted average viewers for each language, there is a clear trend with the largest difference between that Arabic speaking streamers are estimated to have about 4x more average viewers than Swedish and Finnish streamers. However, between each adjacent-ranked language, there are not any great differences between either their predicted values or observed distributions. 
+
+## Q6 
+
+### Plotting residuals of language on average viewers
+
+```{r}
+# Grabbing residuals with `augment()`
+augment(fit3) %>% 
+  
+  rename("language" = language_fac) %>% 
+  
+  ggplot(aes(x = reorder(language, .fitted), 
+             y = .resid)) + 
+  
+  # Showing line for observed = predicted
+  geom_hline(yintercept = 0, 
+             linewidth = 1.5, 
+             color = "grey") +
+  
+  # plotting residuals 
+  geom_point(alpha = 0.75) +
+  
+  # Labeling sides as over or underestimates 
+  geom_label(x = "Swedish", 
+            y = -2.5, 
+            label = "Overestimate", 
+            size = 5) +
+  
+  geom_label(x = "Swedish", 
+             y = 2.5, 
+             label = "Underestimate", 
+             size = 5) +
+  # For readability of language labels
+  coord_flip() + 
+  
+  # symmetric display of residuals
+  ylim(-4, 4) + 
+  
+  labs(title = "Residuals of Average Viewers by Twitch Streamer Language", 
+       subtitle = "Observed minus predicted value", 
+       x = "language", 
+       y = "residual")
+  
+```
+
+There were a few points that the model did not capture very well. The regression model for average viewers using language underestimated the (natural logged) average viewer count for two streamers - English and Russian speaking. The model overestimates the average viewer count for one Japanese speaking streamer and one Thai speaking streamer. Despite these errors, the distributions of residuals don't appear to indicate that there is any systematic error; that is, the residuals are not so far off from symmetric that they bias either under or overestimation. 
+
+However, seeing how the model overestimates and underestimates the average viewer count of Portuguese, Russian, English, German, and other languages by around 7x, the model doesn't provide the best prediction of average viewers. 
+
+

@@ -1,0 +1,269 @@
+---
+title: "SR14: MLM cont'"
+author: "Samuel Snelson"
+date: "`r Sys.Date()`"
+output: html_document
+  
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+
+library(rethinking)
+
+# stitching together plots
+library(patchwork)
+
+# fitting models
+library(rstanarm)
+
+# for getting fitted values from models
+library(ggeffects)
+
+# multivariate distr
+library(MASS)
+
+theme_set(theme_light(base_family = "Avenir"))
+
+```
+
+
+# Easy 
+
+## 14E1
+
+**Add to the following model varying slopes on the predictor x.**
+
+$$
+\begin{align}
+y_i & \sim \text{Normal}(\mu_i, \sigma) \\ 
+\mu_i & = \alpha_{j[i]} +  \beta_j x_i \\ 
+\alpha_j & \sim \text{Normal}(\bar{\alpha}, \sigma_{\alpha}) \\ 
+\bar{\alpha} & \sim \text{Normal}(0, 10) \\ 
+\beta_j & \sim \underline{\text{Normal}(\bar{\beta},\sigma_{\beta})} \\ 
+\bar{\beta} & \sim \underline{\text{Normal}(0, 1)} \\
+\sigma & \sim \text{Exp}(1) \\ 
+\sigma_{\alpha} & \sim \text{Exp}(1) \\
+\sigma_{\beta} & \sim \underline{\text{Exp}(1)} \\ 
+\end{align}
+$$
+
+To allow for varying slopes on the predictor $x$, I have added a standard deviation term for the slope parameter and $\rho$ to account for the covariance between the slopes and intercepts. 
+
+
+## 14E2
+
+**Think up a context in which varying intercepts will be positively correlated with varying slopes. Provide a mechanistic explanation for the correlation.**
+
+
+What are we looking for here? The intercepts should be positively correlated with the slopes. This sounds strange but just means that as a set of values increases at the intercept, the slope for that corresponding set will increase rather than decrease. There is a tendency for effects to be negatively correlated with slopes. One can picture a distribution of slopes normally distributed around some intercept. As the intercept descreases the slopes increase and conversely (i.e., negative correlation). 
+Now what is an example in which the effect of some predictor increases at higher levels of some value at its intercept. I'll have to credit Andres for sharing the example of the Matthew Effect in which, for instance, the rich get richer and the poor get poorer. In general, success begets more success (and conversely, having less begets less). Another example could be the following: the relationship between success and motivation.
+
+```{r}
+dem1 <- tibble( 
+  
+
+ggplot(dem1, aes(motivation, scores)) + 
+  geom_jitter() + 
+  geom_smooth(aes(group = ))
+
+```
+
+
+
+## 14E3
+
+**When is it possible for a varying slopes model to have fewer effective parameters (as estimated by WAIC or PSIS) than the corresponding model with fixed (unpooled) slopes? Explain.**
+
+As McElreath describes in Ch. 13 (404), the additional parameters in the model facilitates a "more aggressive regularizing prior," resulting in "a less flexible posterior and therefore fewer effective parameters." McElreath also describes that posterior distributions of parameters which are close to zero contribute to decreased effective parameters. When more parameters are added to a model, it does not necessarily mean they will all contribute towards the estimation. McElreath states on 450 that "each varying intercept or slope counts less than one effective parameter." 
+
+## 14M1
+
+**Repeat the café robot simulation from the beginning of the chapter. This time, set rho to zero, so that there is no correlation between intercepts and slopes. How does the posterior distribution of the correlation reflect this change in the underlying simulation?**
+
+```{r}
+# Step 1: simulate the population
+#########################################
+# average wait time in morning (intercept alpha) 
+a <- 3.5
+
+# average difference in weight time b/w morning and afternoon 
+b <- (-1) 
+
+# sd of intercepts
+sigma_a <- 1 
+
+# sd of slopes
+sigma_b <- 0.5 
+
+# correlation between intercept/slope 
+# from morning to afternoon, average weight time goes down
+rho <- 0
+
+# Mu to sample cafes
+Mu <- c(a, b)
+  
+# Covariance of intercepts and slopes
+cov_ab <- sigma_a * sigma_b * rho
+
+# Correlation matrix 
+# recall that correlation matrix is: 
+# ( sd of a      cov of a,b)
+# ( cov of a,b     sd of b )
+
+Rho <- rbind(
+  c(1, rho),
+  c(rho, 1)
+)
+
+Sigma <- matrix(c(sigma_a^2, cov_ab, cov_ab, sigma_b^2), 
+                ncol = 2)
+
+# population of cafes
+n_cafes <- 20
+
+
+# Random sample cafes from multivariate Gaussian distribution
+set.seed(10)
+vary_effects <- mvrnorm(n_cafes, Mu, Sigma)
+
+# slopes and intercepts
+a_cafe <- vary_effects[,1]
+b_cafe <- vary_effects[,2]
+
+```
+
+```{r}
+
+# Step 2: simulate observations from population
+#########################################
+
+
+set.seed(15)
+
+n_visits <- 10
+
+afternoon <- rep(0:1, n_visits * n_cafes / 2)
+
+cafe_id <- rep(1:n_cafes, each = n_visits)
+
+mu <- a_cafe[cafe_id] + b_cafe[cafe_id] * afternoon
+
+# sd within cafes
+sigma <- 0.5
+
+wait <- rnorm(n_visits * n_cafes, mu, sigma)
+
+# Given the simulated population features of cafes and sampled features of observed cafes, we have some simulated data
+d <- data.frame(
+  cafe = cafe_id, 
+  afternoon = afternoon, 
+  wait = wait
+)
+
+
+```
+
+
+$$
+\begin{align}
+W_i & \sim \text{Normal}(\mu_i, \sigma) \\ 
+\mu_i & = \alpha_{\text{CAFE[i]}} + \beta_{\text{CAFE[i]}} A_i \\
+
+\begin{bmatrix}
+\alpha_{\text{CAFE}} \\ 
+\beta_{\text{CAFE}}
+\end{bmatrix} 
+
+& \sim \text{MVNormal} \left( 
+
+\begin{bmatrix}
+\alpha \\ 
+\beta
+\end{bmatrix}, S
+
+\right)
+
+\\ 
+
+S & = 
+
+\begin{pmatrix}
+\sigma_{\alpha} & 0 \\ 
+0 & \alpha_{\beta}
+\end{pmatrix}
+
+R 
+
+\begin{pmatrix}
+\sigma_{\alpha} & 0 \\ 
+0 & \alpha_{\beta}
+\end{pmatrix}
+
+\\ 
+
+
+
+\alpha_{\text{CAFE}} & \sim \text{Normal}(5, 2 ) \\ 
+\beta_{\text{CAFE}} & \sim \text{Normal}(-1, 0.2) \\ 
+\sigma, \sigma_{\alpha}, \sigma_{\beta} & \sim \text{Exp}(1) \\
+R & \sim \text{LKJcorr}(2)
+\end{align}
+$$
+Well that was a bit much before getting to the model. But here we are.
+The new additions to our model here concern the prior distributions for $\alpha_{\text{CAFE}}$ and $\beta_{\text{CAFE}}$. The prior distributions for these parameters are given by the multivarate normal distribution with means $\alpha$ and $\beta$ and the covariance matrix **S**. All this is doing is capturing the covarying of the intercept and slopes - more easily when interpreted substantively in terms of morning vs. afternoon and across each cafe. 
+
+Now for the model. Take it away ulam. 
+
+```{r, results = FALSE, message = FALSE}
+m1 <- ulam(
+  alist(
+    wait ~ normal(mu, sigma), 
+    mu <- a_cafe[cafe] + b_cafe[cafe] * afternoon, 
+    c(a_cafe, b_cafe)[cafe] ~ multi_normal(c(a, b), rho, sigma_cafe), 
+    a ~ normal(5, 2), 
+    b ~ normal(-1, 0.5), 
+    sigma_cafe ~ exponential(1), 
+    sigma ~ exponential(1), 
+    rho ~ lkj_corr(2)), 
+  data = d, 
+  chains = 4, 
+  cores = 4)
+
+precis(m1, pars = "rho", depth = 3)
+
+```
+
+
+```{r}
+post <- extract.samples(m1, n = 1e4) %>% 
+  as.data.frame()
+
+
+```
+
+
+
+## 14M2
+
+**Fit this multilevel model to the simulated café data. Use WAIC to compare this model to the model from the chapter, the one that uses a multi-variate Gaussian prior. Explain the result.** 
+
+$$
+\begin{align}
+W_i & \sim \text{Normal}(\mu_i, \sigma) \\ 
+\mu_i & = \alpha_{\text{CAFE[i]}} + \beta_{\text{CAFE[i]}} A_i \\
+
+\alpha_{\text{CAFE}} & \sim \text{Normal}(\bar{\alpha}, \sigma_{\alpha} ) \\ 
+\beta_{\text{CAFE}} & \sim \text{Normal}(\bar{\beta}, \sigma_{\beta}) \\ \bar{\alpha} & \sim \text{Normal}(0, 10) \\ 
+\beta & \sim \text{Normal}(0, 10) \\ 
+\sigma, \sigma_{\alpha}, \sigma_{\beta} & \sim \text{Exp}(1)
+\end{align}
+$$
+
+
+
+
+
+

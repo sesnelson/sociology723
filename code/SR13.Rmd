@@ -1,0 +1,637 @@
+---
+title: "SR13: MLM"
+author: "Samuel Snelson"
+date: "`r Sys.Date()`"
+output: html_document
+  
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(rethinking)
+
+# stitching together plots
+library(patchwork)
+
+# fitting models
+library(rstanarm)
+
+# for getting fitted values from models
+library(ggeffects)
+
+theme_set(theme_light(base_family = "Avenir"))
+
+```
+
+
+
+# Easy 
+
+## 13E1
+
+**Which of the following priors will produce more shrinkage in the estimates? **
+
+$$
+(a) \ \ \alpha_{\text{TANK}} \sim N(0, 1) \\ 
+(b) \ \ \alpha_{\text{TANK}} \sim N(0, 2)
+$$
+
+The prior with $N(0,2)$ will produce more shrinkage because there is more variance. Recall that shrinkage is a function of a set's intraclass correlation (here considered analogous to internal homogeneity) and sample size. The prior with a higher standard deviation will produce more shrinkage because there is more difference from the set's mean. Conversely, having a more narrow prior implies more certainty that a set are distributed more compactly about it's mean and thus tends to its own mean relative to a grand mean. 
+
+
+## 13E2
+
+**Rewrite the following model as a multilevel model. **
+
+$$
+\begin{align}
+y_i & \sim \text{Binomial}(1, p_i) \\ 
+\text{logit}(p_i) & = \alpha_{\text{GROUP[i]}} + \beta x_i \\ 
+\alpha_{\text{GROUP}} & \sim \text{Normal}(0,1.5) \\ 
+\beta & \sim \text{Normal} (0, 0.5)
+\end{align}
+$$
+
+Rewritten as a MLM:
+
+$$
+\begin{align}
+y_i & \sim \text{Binomial}(1, p_i) \\ 
+\text{logit}(p_i) & = \alpha_{j[i]} + \beta x_i \\ 
+\alpha_j & \sim \underline{\text{Normal}(\bar{\alpha},\tau)} \\
+\bar{\alpha} & \sim \underline{ \text{Normal}(0, 1.5)} \\
+\beta & \sim \text{Normal} (0, 0.5) \\ 
+\tau  & \sim \underline{  \text{Exp}(1)}
+\end{align}
+$$
+I have underlined the added sections that convert the given model into a multilevel model. In the given model (no pooling), groups have independent prior distributions. In the multilevel model, we have two additional and one modified prior. $\alpha_j$ denotes the prior distribution of log-odds for each cluster $j$ and is defined in terms of the grand mean (of log-odds), $\bar{\alpha}$, and standard deviation of the distribution of log-odds among all clusters (grand standard deviation), $\tau$. 
+
+To make all this terminology more concrete, we have three important numbers with respect to the estimated value of the outcome for any cluster - the cluster's mean, the grand mean (across clusters), and the estimated mean of the cluster given (where the prior is defined in terms of the population of clusters). Based on the features of the cluster (intraclass correlation and the number of observations), the estimated mean of the cluster will more or less reflect its own or the grand mean. 
+
+As we discussed in class, the estimated mean of any cluster us given by the following: 
+
+$$
+\hat{\mu}_j^{PP} = \hat{R}_j (\hat{\mu}_j^{ML} - \bar{\mu}) + \bar{\mu}
+$$
+$\hat{\mu}_j^{PP}$ is the partial pooling estimate of the mean of cluster $j$. The right hand side represents the proportion of the cluster's own mean which is contributed to the cluster's partial pooling estimated mean. The parenthetic component represents the difference between the cluster mean (maximum likelihood) and the grand mean. A portion of this difference, positive or negative is then added to the grand mean. This difference is given by the shrinkage factor, $\hat{R}_j$, for a given cluster, shown below. As a cluster's internal variance increases, so does the shrinkage factor. As a cluster's sample size increases, so does the shrinkage factor. Stated concretely, if a cluster is large and internally consistent, then it will retain most of its own mean rather than be pulled toward the grand mean. 
+
+$$
+\hat{R}_j = \frac{\tau^2}{\tau^2 + \large \frac{\sigma^2}{n_j}}
+$$
+
+
+## 13E3
+
+**Rewrite the following model as a multilevel model. **
+
+$$
+\begin{align}
+y_i & \sim \text{Normal}(\mu_i, \sigma) \\ 
+\mu_i & = \alpha_{j[i]} + \beta x_i \\ 
+\alpha_j & \sim \underline{\text{Normal}(\bar{\alpha},\tau)} \\ 
+\bar{\alpha} & \sim \underline{\text{Normal}(0, 5)} \\
+\beta & \sim \text{Normal} (0, 1) \\ 
+\tau & \sim \underline{\text{Exp}(1)} \\ 
+\sigma & \sim \text{Exp}(1)
+\end{align}
+$$
+Consistent with the reasoning stated in the previous question, the cluster level estimation based on the grand mean is incorporated into $\alpha_j$. One difference between this and the last model is that we now have two measures of standard deviation - $\tau$ for the distribution of the predicted values for a given cluster, $\alpha_j$, and $\sigma$ for the distribution of predicted values of any observation, $y_i$ 
+
+
+## 13E4
+
+**Write a mathematical model formula for a Poisson regression with varying intercepts. **
+
+$$
+\begin{align}
+y_i & \sim \text{Poisson}(\lambda_i) \\
+\log(\lambda_i) & = \alpha_{j[i]} \\ 
+\alpha_j & \sim \text{Normal}(\bar{\alpha}, \tau) \\ 
+\bar{\alpha} & \sim \text{Normal}(0,1) \\ 
+\tau & \sim \text{Exp}(1) 
+\end{align}
+$$
+Consistent with the previous two questions, this model uses partial pooling estimation of clusters Poisson log-expected values. 
+
+
+## 13E5
+
+**Write a mathematical model formula for a Poisson regression with two different kids of varying intercepts, a cross-classified model. **
+
+$$
+\begin{align}
+y_i & \sim \text{Poisson}(\lambda_i) \\
+\log(\lambda_i) & = \alpha_{j[i]} \  \underline{ + \  \gamma_{k[i]}}\\ 
+\alpha_j & \sim \text{Normal}(\bar{\alpha}, \tau_j) \\
+\gamma_k & \sim \underline{\text{Normal}(0, \tau_k)}\\
+\bar{\alpha} & \sim \text{Normal}(0,1) \\ 
+\tau_j & \sim \text{Exp}(1) \\ 
+\tau_k & \sim \underline{\text{Exp}(1)}
+\end{align}
+$$
+
+I have specified the clusters contribution to the outcome as $\gamma_{k[i]}$ (representing each observation within each cluster $k$). The prior for each cluster $k$ is specified to be normally distributed with mean 0 and standard deviation $\tau_k$. 
+
+# Medium 
+
+## 13M1
+
+**Revisit the Reed frog survival data, data(reedfrogs), and add the predation and size treatment variables to the varying intercepts model. Consider models with either main effect alone, both main effects, as well as a model including both and their interaction. Instead of focusing on inferences about these two predictor variables, focus on the inferred variation across tanks. Explain why it changes as it does across models.**
+
+```{r}
+data(reedfrogs)
+
+d <- reedfrogs %>% 
+  
+  # defining predator and size variables as [0,1]
+  mutate(pred = if_else(pred == "pred", 1, 0), 
+         big = if_else(size == "big", 1, 0), 
+         tank = 1:nrow(reedfrogs)) %>% 
+  
+  rename("N" = density, 
+         "S" = surv) 
+  
+```
+
+Before computing, let's first define the model. In the textbook, McElreath estimated the proportion of surviving tadpoles in each tank just based on the tank a tadpole was in. Now we'll add predation and size into the model. According to the details from `?reedfrogs`, predation is an experimental treatment where there were predators present in a tank or not and size refers to an experimental treatment where tadpoles are big or small. 
+
+$$
+\begin{align}
+
+S_i & \sim \text{Binomial}(N_i, p_i)\\
+\text{logit}(p_i) & = \alpha_i + \beta_p Pred_i + \beta_s Big_i \ \ \ \ \ \ \ \text{i: for tanks 1..48} \\ 
+\alpha_i & \sim \text{Normal}(\bar{\alpha}, \sigma) \\ 
+\bar{\alpha} & \sim \text{Normal}(0, 1.5) \\ 
+\beta_p & \sim \text{Normal}(0,1) \\
+\beta_b & \sim \text{Normal}(0,1) \\
+\sigma & \sim \text{Exp}(1)
+
+\end{align}
+$$
+To treat this more carefully, I could do a prior predictive simulation for each parameter to find out what are reasonable priors. I am going with the ones McElreath went with on the original model. For the $\beta$ parameters, I've gone with a vanilla N(0,1) because on the log-odds scale, the majority of the probability mass falls within N(0,1). This is skeptical of extremely strong relationships, but I think it should be fine for this. 
+
+So now we want to compile all permutations of models given these variables (minus no predictors). 
+
+```{r, results = FALSE, message = FALSE}
+
+# Model 1: just predation
+m1 <- ulam(
+  alist(
+    S ~ dbinom(N, p), 
+    logit(p) <- a[tank] + bP * pred, 
+    a[tank] ~ dnorm(a_bar, sigma), 
+    a_bar ~ dnorm(0, 1.5), 
+    bP ~ dnorm(0, 1), 
+    sigma ~ dexp(1)), 
+  data = d, 
+  chains = 4, 
+  iter = 3000, 
+  log_lik = TRUE)
+
+
+# Model 2: just size
+m2 <- ulam(
+  alist(
+    S ~ dbinom(N, p), 
+    logit(p) <- a[tank] + bB * big, 
+    a[tank] ~ dnorm(a_bar, sigma), 
+    a_bar ~ dnorm(0, 1.5), 
+    bB ~ dnorm(0, 1), 
+    sigma ~ dexp(1)), 
+  data = d, 
+  chains = 4, 
+  iter = 3000, 
+  log_lik = TRUE)
+
+
+# Model 3: everything 
+m3 <- ulam(
+  alist(
+    S ~ dbinom(N, p), 
+    logit(p) <- a[tank] + bP * pred + bB * big,
+    a[tank] ~ dnorm(a_bar, sigma), 
+    a_bar ~ dnorm(0, 1.5), 
+    bP ~ dnorm(0, 1), 
+    bB ~ dnorm(0, 1), 
+    sigma ~ dexp(1)), 
+  data = d, 
+  chains = 4, 
+  iter = 3000,
+  log_lik = TRUE)
+
+
+# Model 4: Interaction of size and predation
+m4 <- ulam(
+  alist(
+    S ~ dbinom(N, p), 
+    logit(p) <- a[tank] + bP * pred + bB * big + bPB * pred * big,
+    a[tank] ~ dnorm(a_bar, sigma), 
+    a_bar ~ dnorm(0, 1.5), 
+    bP ~ dnorm(0, 1), 
+    bB ~ dnorm(0, 1), 
+    bPB ~ dnorm(0, 1),
+    sigma ~ dexp(1)), 
+  data = d, 
+  chains = 4, 
+  iter = 3000,
+  log_lik = TRUE)
+```
+
+
+I would much rather look at a plot of the differences in estimated log-odds of survival across tanks and models rather than the raw numbers. However, I'm not sure how to best visualize this with 48 tanks, so here I will attempt. 
+
+
+```{r}
+coefs <- coeftab(m1, m2, m3, m4)
+
+coef_terms <- coefs@coefs %>% 
+  as.data.frame() %>% 
+  mutate(tank = 1:nrow(coefs@coefs)) %>% 
+  remove_rownames() %>% 
+  pivot_longer(cols = 1:4, names_to = "model", values_to = "coef") %>% 
+  filter(tank <= 48) 
+
+coef_se <- coefs@se %>% 
+  as.data.frame() %>% 
+  mutate(tank = 1:nrow(coefs@se)) %>% 
+  remove_rownames() %>% 
+  rename("m1" = "1", 
+         "m2" = "NA", 
+         "m3" = "3", 
+         "m4" = "4") %>% 
+  pivot_longer(cols = 1:4, names_to = "model", values_to = "se") %>% 
+  filter(tank <= 48)
+
+coef_df <- left_join(coef_terms, coef_se, on = c("model", "tank")) %>% 
+  mutate(lower = coef + (qnorm(0.025) * se), 
+         upper = coef + (qnorm(0.975) * se))
+
+
+coef_plot <- \(x, y) {
+  
+  p <- coef_df %>% 
+    filter(tank <= x & tank > y) %>% 
+    ggplot(aes(tank, coef)) + 
+    geom_pointrange(aes(ymin = lower, 
+                        ymax = upper, 
+                        group = model, 
+                        color = model), 
+                    position = position_dodge(0.5)) + 
+    coord_flip() + 
+    theme(legend.position = "top")
+  
+  return(p)
+  
+}
+
+p1 <- coef_plot(12, 0) + 
+  scale_x_continuous(breaks = 1:12) 
+
+p2 <- coef_plot(24, 12) + 
+  scale_x_continuous(breaks = 13:24)
+
+p3 <- coef_plot(36, 25) + 
+  scale_x_continuous(breaks = 25:36)
+
+p4 <- coef_plot(48, 37) + 
+  scale_x_continuous(breaks = 37:48)
+
+(p5 <- (p1 + p2) / (p3 + p4))
+
+```
+
+This isn't my best plot, but it gives us an overall sense of how the different models vary in their estimation of the log-odds of survival. The models with just size but not predation seems to be the only one which is quite different, consistently underestimating the log-odds of survival. This suggests that size, without consideration of predation, can lead us to believe that tadpoles might have a lower likelihood of surviving while, if we considered whether or not there was a predator, the odds of survival would increase. I would hypothesize, and could check beyond this assignment, that the tanks with a low probability of survival relative to the other models represent tanks with predators. 
+
+## 13M2
+
+**Compare the models you fit just above, using WAIC. Can you reconcile the differences in WAIC with the posterior distributions of the models? **
+
+```{r}
+compare(m1, m2, m3, m4)
+```
+
+Each model's WAIC appears to be consistent with their differences in estimation of the log-odds of survival. The models with predation alone, both predation and size, and their interaction perform comparably on this predictive out of sample measure. 
+
+
+## 13M3
+
+**Re-estimate the basic Reed frog varying intercept model, but now using a Cauchy distribution in place of the Gaussian distribution for the varying intercepts. That is, fit this model:**
+
+**(You are likely to see many divergent transitions for this model. Can you figure out why? Can you fix them?) Compare the posterior means of the intercepts** $\alpha_i$ **, to the posterior means produced in the chapter, using the customary Gaussian prior. Can you explain the pattern of differences? Take note of any change in the mean α as well. **
+
+$$
+\begin{align}
+
+S_i & \sim \text{Binomial}(N_i, p_i)\\
+\text{logit}(p_i) & = \alpha_i \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \  \ \ \ \ \ \ \ \text{i: for tanks 1..48} \\ 
+\alpha_i & \sim \text{Cauchy}(\bar{\alpha}, \sigma) \\ 
+\bar{\alpha} & \sim \text{Normal}(0, 1) \\ 
+\sigma & \sim \text{Exp}(1)
+
+\end{align}
+$$
+
+```{r, results = FALSE, message = FALSE}
+m5 <- ulam(
+  alist(
+    S ~ dbinom(N, p), 
+    logit(p) <- a[tank],
+    a[tank] ~ cauchy(a_bar, sigma), 
+    a_bar ~ normal(0, 1), 
+    sigma ~ dexp(1)), 
+  data = d, 
+  chains = 4,
+  iter = 3000, 
+  log_lik = TRUE)
+```
+
+```{r}
+# Visualizing estimation chains
+traceplot(m5)
+
+```
+
+We can see that for a number of tanks, the posterior is not being efficiently traversed because segments of the chains are concentrated above 0. 
+
+```{r, results = FALSE, message = FALSE}
+m6 <- ulam(
+  alist(
+    S ~ dbinom(N, p), 
+    logit(p) <- a[tank],
+    a[tank] ~ normal(a_bar, sigma), 
+    a_bar ~ normal(0, 1), 
+    sigma ~ dexp(1)), 
+  data = d, 
+  chains = 4,
+  iter = 3000, 
+  log_lik = TRUE)
+
+```
+
+```{r}
+# Visualizing estimation chains
+traceplot(m6)
+
+```
+
+Now let's compare the model parameters
+
+```{r}
+coeftab(m6, m5)
+
+precis(m6, depth = 2)
+precis(m5, depth = 2)
+
+```
+
+Most notably, when the log-odds of the model with normally distributed $\alpha_i$ are 3 or above (with an unclear threshold), the corresponding log-odds for the model with cauchy distributed $\alpha_i$ blow up by double or more. For the cauchy model, the number of effective samples descreased considerably - particularly for those log-odds estimates which blew up - and the $\hat{R}$ increased for them as well. This suggests that the posterior for te cauchy model was not sampled effectively (also indicated by low Bulk and Tail Effective Sample Sizes). Strangely this is not the case for the 33nd tank with an estimate from the normal model of 3.17. 
+
+## 13M4
+
+**Now use a Student-t distribution with ν = 2 for the intercepts. Compare the resulting posterior to both the original model and the Cauchy model in 13M3. Can you explain the differences and similarities in shrinkage in terms of the properties of these distributions? **
+
+$$
+\alpha_i \sim \text{Student}(2, \bar{\alpha}, \sigma)
+$$
+
+```{r, results = FALSE, message = FALSE}
+m7 <- ulam(
+  alist(
+    S ~ dbinom(N, p), 
+    logit(p) <- a[tank],
+    a[tank] ~ student_t(2, a_bar, sigma), 
+    a_bar ~ normal(0, 1), 
+    sigma ~ dexp(1)), 
+  data = d, 
+  chains = 4,
+  iter = 3000, 
+  log_lik = TRUE)
+```
+
+```{r}
+# Visualizing estimation chains 
+traceplot(m7)
+
+```
+
+
+Comparing all coefficients
+
+```{r}
+coeftab(m6, m5, m7) # normal, cauchy, student
+```
+
+Just based on the variability among the estimated tank means (in log-odds scale), the same trend among the normal to cauchy distribution as with the student's t distribution - only with not as large changes for large positive log-odds. In terms of shrinkage, it appears that relative to the normal model, the cauchy model tends to overfit towards tanks with the hiest probability of survival, and the student's t model overfits more than the normal model but not as much as the cauchy model. 
+
+
+## 13M5
+
+**Modify the cross-classified chimpanzees model m13.4 so that the adaptive prior for blocks contains a parameter** $\bar{\gamma}$ **for its mean: **
+
+$$
+\begin{align}
+L_i & \sim \text{Binomial} (1, p_i) \\ 
+\text{logit}(p_i) & = \alpha_i + \gamma_j + \beta_{k} \\ 
+\beta_k & \sim \text{Normal}(0, 0.5) \ \ \ \ \ \ \  \text{for treatments k = 1..4}\\
+\alpha_i & \sim \text{Normal}(\bar{\alpha}, \sigma_{\alpha}) \ \ \ \ \ \ \ \text{for actors i = 1..7}\\ 
+\bar{\alpha} & \sim \text{Normal}(0, 1.5) \\ 
+\gamma_j & \sim \text{Normal}(\bar{\gamma}, \sigma_{\gamma}) \ \ \ \ \ \ \ \ \text{for blocks j = 1..6}\\
+\bar{\gamma} & \sim \text{Normal}(0, 1.5) \\ 
+\sigma_{\alpha} & \sim \text{Exp}(1) \\
+\sigma_{\gamma} & \sim \text{Exp}(1)
+\end{align}
+$$
+
+By adding the $\gamma_j$ and $\bar{\gamma}$ terms, we have partially pooled the effects of experimental blocks on the log-odds of chimp actors pulling left. 
+
+Let's see how this effects the estimates compared to the model where only the intercepts vary. 
+
+```{r}
+data(chimpanzees)
+
+d2 <- chimpanzees %>% 
+  # treatment variable captures all 4 treatment levels
+  mutate(treatment = 1 + prosoc_left + (2 * condition)) %>% 
+  select(actor, treatment, pulled_left, block)
+
+# 1: prosocial on right & no partner
+# 2: prosocial on left & no partner
+# 3: prosocial on right & partner
+# 4: prosocial on left & partner
+```
+
+
+```{r, results = FALSE, message = FALSE}
+# intercepts vary but not blocks
+m8 <- ulam( 
+  alist(pulled_left ~ dbinom(1, p), 
+        logit(p) <- a[actor] + g[block] + b[treatment],
+        b[treatment] ~ dnorm(0, 0.5),
+        ## adaptive priors 
+        a[actor] ~ dnorm(a_bar, sigma_a), 
+        g[block] ~ dnorm(0, sigma_g), 
+        ## hyper-priors 
+        a_bar ~ dnorm(0, 1.5), 
+        sigma_a ~ dexp(1), 
+        sigma_g ~ dexp(1)), 
+  data = d2, 
+  chains = 4,
+  cores = 4, 
+  log_lik = TRUE)
+```
+
+```{r}
+# Vizualizing chains
+traceplot(m8)
+
+```
+
+```{r, results = FALSE, message = FALSE}
+# intercepts and block effects vary 
+m9 <- ulam(
+  alist(
+    pulled_left ~ dbinom(1, p), 
+    logit(p) <- a[actor] + g[block] + b[treatment], 
+    b[treatment] ~ dnorm(0, 1.5), 
+    
+    a[actor] ~ dnorm(a_bar, sigma_a), 
+    g[block] ~ dnorm(g_bar, sigma_g), 
+    
+    a_bar ~ dnorm(0, 1.5), 
+    g_bar ~ dnorm(0, 1.5), 
+    
+    sigma_a ~ dexp(1), 
+    sigma_g ~ dexp(1)), 
+  
+  data = d2, 
+  chains = 4, 
+  cores = 4,
+  log_lik = TRUE)
+
+```
+
+```{r}
+# Visualizing chains 
+traceplot(m9)
+
+```
+
+I have been getting some issues with divergent transitions, and bulk and tail effective sample size measures. However, we'll proceed in answering the question. 
+
+```{r}
+
+precis(m8, depth = 2)
+precis(m9, depth = 2)
+
+```
+
+Comparing the parameters and their interval estimates, there are some differences in magnitude and in sign, but they all appear to be in each others interval range. Focusing in on the block effects, the second model which allows them to vary (with partial pooling), the point estimates are larger than the first model. However, as stated before the interval ranges are quite large. 
+
+
+## 13M6
+
+**Sometimes the prior and the data (through the likelihood) are in conflict, because they concentrate around different regions of parameter space. What happens in these cases depends a lot upon the shape of the tails of the distributions. Likewise, the tails of distributions strongly influence can outliers are shrunk or not towards the mean. I want you to consider four different models to fit to one observation at y = 0. The models differ only in the distributions assigned to the likelihood and prior. Here are the four models: **
+
+
+```{r}
+d3 <- tibble(y = 0)
+```
+
+
+```{r, results = FALSE, message = FALSE}
+
+m_nn <- ulam(
+  alist(y ~ normal(mu, 1),
+        mu ~ normal(10, 1)),
+        data = d3)
+
+m_tn <- ulam(
+  alist(y ~ student_t(2, mu, 1),
+        mu ~ normal(10, 1)),
+        data = d3)
+
+m_nt <- ulam(
+  alist(y ~ normal(mu, 1),
+        mu ~ student_t(2, 10, 1)),
+        data = d3) 
+
+m_tt <- ulam(
+  alist(y ~ student_t(2, mu, 1),
+        mu ~ student_t(2, 10, 1)),
+        data = d3)
+
+```
+
+These are some weird models, so let's visualize these prior and their consequent posterior distributions of the outcome. 
+
+This may not be the best way to do this but I'll create separate tibbles where each model's prior and posterior are stored and merge them together to make a density plot showing the prior and posterior together. 
+
+
+
+```{r}
+post1 <- tibble(
+  mu = rnorm(500, 10, 1), 
+  prior = rnorm(500, mu, 1), 
+  post = unlist(extract.samples(m_nn, n = 500)), 
+  model = "normal-normal"
+) %>% 
+  select(-mu) %>% 
+  pivot_longer(cols = 1:2, 
+               names_to = "term", 
+               values_to = "value")
+
+post2 <- tibble(
+  mu = rnorm(500, 10, 1), 
+  prior = rt(500, mu, 1), 
+  post = unlist(extract.samples(m_tn, n = 500)), 
+  model = "student-normal"
+) %>% 
+  select(-mu) %>% 
+  pivot_longer(cols = 1:2, 
+               names_to = "term", 
+               values_to = "value")
+
+
+post3 <- tibble(
+  mu = rt(500, 10, 1), 
+  prior = rnorm(500, mu, 1), 
+  post = unlist(extract.samples(m_nt, n = 500)), 
+  model = "normal-student"
+) %>% 
+  select(-mu) %>% 
+  pivot_longer(cols = 1:2, 
+               names_to = "term", 
+               values_to = "value")
+
+post4 <- tibble(
+  mu = rt(500, 10, 1), 
+  prior = rt(500, mu, 1), 
+  post = unlist(extract.samples(m_tt, n = 500)), 
+  model = "student-student"
+) %>% 
+  select(-mu) %>% 
+  pivot_longer(cols = 1:2, 
+               names_to = "term", 
+               values_to = "value")
+
+
+post_main <- rbind(post1, post2, post3, post4)
+
+
+ggplot(post_main) + 
+  geom_density(aes(value, fill = term), 
+               alpha = 0.5) +
+  facet_wrap(~ model) + 
+  xlim(-7.5, 15) + 
+  labs(subtitle = "Distribution of the outcome - distribution of the prior for mu")
+
+```
+
+
+For the normal-normal model, it behaves as we would expect. The prior distribution is centered around 10 as we defined it. Observing 0 pulls the distribution down. However, either something weird is going on here or I have done something wrong. Despite defining the priors for the distributions involving student's t distributions around 10, they are centered around 0. For the normal-student distribution, observing 10 concentrates more probability mass around 0. For the student-normal distribution, the posterior is shifted completely over to 10. For the student-student distribution, the posterior probability mass is distributed bi-modally between 0 and 10.
+
+
+
+

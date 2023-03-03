@@ -1,0 +1,363 @@
+---
+title: 'HW: Modern Dive Ch. 6 Extra'
+author: "Samuel Snelson"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    theme: paper
+    df_print: kable
+    toc: TRUE
+    toc_float: 
+      collapsed: FALSE
+      smooth_scroll: FALSE
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(janitor)
+library(broom)
+library(patchwork)
+library(bayesrules)
+
+theme_set(theme_light(base_family = "Avenir"))
+```
+
+Importing `bikes` data set from BayesRules!' package 
+
+```{r}
+data(bikes, package = "bayesrules")
+glimpse(bikes)
+```
+
+
+## Q0
+
+1. How many rows are in the dataset?
+
+```{r}
+nrow(bikes)
+```
+
+- The bikes dataset has 500 observations. This can be found with the `nrow()` function or by glancing at the number of observations in the environment panel in RStudio (if one is using RStudio). 
+
+
+\ 
+
+
+2. What does each row represent?
+
+- Each row represents one day 
+
+\ 
+
+
+3. What dates does the dataset cover?
+
+```{r}
+
+# If dates variable is chronological, one can find range as such
+bikes$date[1] # first date 
+bikes$date[nrow(bikes)] #last date 
+
+# a tidy way 
+bikes %>% 
+  select(date) %>% 
+  slice(1, nrow(bikes))
+```
+
+
+- The dataset covers from Jan. 1, 2011 to Dec. 31, 2012.
+  - If the dates were not chronological, one could use some functions to either order the existing variable or parse the dates into separate variables and order them therein. 
+
+\ 
+
+4. What is the highest observed ridership in the dataset?
+
+```{r}
+max(bikes$rides) # max rides
+
+# tidy 
+bikes %>% 
+  select(date, rides) %>% 
+  filter(rides == max(rides))
+
+# base for when
+bikes$date[bikes$rides == max(bikes$rides)]
+
+```
+
+- Ridership was highest on September 26th, 2012 with 6,946 rides. 
+
+\
+
+5. What was the highest wind speed recorded in the dataset?
+
+```{r}
+bikes %>% 
+  select(date, windspeed) %>% 
+  filter(windspeed == max(windspeed))
+```
+
+- Wind speed was highest on February 19, 2011 at 34 mph (units confirmed by checking `?bikes`).
+
+
+
+## Q1
+
+### Correlation
+
+Correlation between the number of rides and what the temperature feels like (Fª). 
+
+```{r}
+cor(bikes$rides, bikes$temp_feel)
+```
+
+- The correlation between the number of rides and what the temperature feels like is 0.5825 - positive and moderately strong. 
+
+```{r}
+ggplot(bikes, aes(rides, temp_feel)) + 
+  geom_point() + 
+  geom_smooth(method = "lm")
+```
+
+
+
+Correlation between the number of rides and the wind speed (mph).
+
+```{r}
+cor(bikes$rides, bikes$windspeed)
+```
+
+- The correlation between the number of rides and the wind speed (mph) is -0.195 - very slighly strong and negative. 
+
+```{r}
+ggplot(bikes, aes(rides, windspeed)) + 
+  geom_point() + 
+  geom_smooth(method = "lm")
+```
+
+
+## Q2
+
+### Conversion and Correlation
+
+```{r}
+bikes <- bikes %>% 
+  mutate(wind_kph = windspeed / 1.61) 
+```
+
+- Wind speed in mph and kph are going to be perfectly positively correlated (that is, a correlation of 1). This is because the variables have the exact same distributions.
+
+One can refer to the formula for correlation. Each component of the equation concerns the distance of each set of observations relative to their averages. Windspeed, measured with miles or kilometers, retains the same distribution (given we simply transformed the same variable). Doing any sort of linear transformation will not make `windspeed` any less correlated with itself. 
+
+$$
+r = \frac{\sum(x_i - \bar{x})(y_i - \bar{y})}{\sqrt{\sum(x_i - \bar{x})^2 \sum(y_i - \bar{y})^2}}
+$$
+
+## Q3
+
+### Simple regression with unit conversion 
+
+We are interested in predicting the number of rides each day with wind speed (in mph and kph)
+
+```{r}
+
+bikes <- bikes %>% 
+  mutate(windspeed_c = windspeed - mean(windspeed), 
+         wind_kph_c = wind_kph - mean(wind_kph))
+
+# regression model with mph 
+lm(rides ~ windspeed_c, 
+   data = bikes) %>% 
+  tidy()
+
+# regression model with kph 
+lm(rides ~ wind_kph_c, 
+   data = bikes) %>% 
+  tidy()
+```
+
+
+Two things we can notice immediately are that the intercepts are the same for both models but the slopes are different. What's going on! 
+
+- The intercept refers to the estimates number of rides on days with 0 wind (0 kph of wind is equivalent to 0 mph of wind), 3,482 rides. 
+  
+- The slopes are different by an interesting factor - about 1.61! Recall our initial conversion of `windspeed` to `wind_kph` by dividing by 1.61. This tells us that the parameters for the kph model (for which x > 0) are 1.61 times those of the mph model. To prove this to ourselves, reversing the conversion by multiplying -55.5 by 1.61 gives us -89.4.
+  
+
+## Q4
+
+### 20 mph v. 20 kph 
+
+What are the predicted number of rides on days with windspeeds of 20mph and 20kph? 
+
+$$
+\begin{align}
+\text{Riders}_i &= 3482 - 55.5(Wind_{i, \ mph}) \\
+\underline{2372} &= 3482 - 55.5(20)\\
+
+\\
+
+\text{Riders}_i &= 3482 - 89.4(Wind_{i, \ kph}) \\
+\underline{1694} &= 3482 - 89.4(20)
+\end{align}
+$$
+
+The predicted number of riders on days with a wind speed of 20mph is about 2,372. On days with wind speeds of 20kph, the model predicts there would be about 1,694 riders. This difference corresponds to *actually* different wind speeds (notwithstanding the accuracy of the model). 
+
+
+
+
+## Q5
+
+### Multiple regression 
+
+```{r}
+# Celcius conversion on temp_feel
+bikes <- bikes %>% 
+  mutate(temp_celc = (temp_feel - 32) * (5 / 9), 
+         temp_celc_c = temp_celc - mean(temp_celc))
+```
+
+Modelling rides per day as function of `wind_kph` and `temp_c`
+
+```{r}
+
+lm(rides ~ wind_kph_c + temp_celc_c, 
+   data = bikes) %>% 
+  tidy()
+
+```
+
+Slope interpretations: 
+
+- Adjusting for the temperature (Cª), the model expects about 51 fewer riders for each 1 kph increase in wind speed on a given day. 
+
+- Adjusting for the wind speed, the model expects about 143 more riders for each degree increase in temperature (Cª) on a given day. 
+  - Considering that the model assumes that ridership will continue to increase however unpleasant increasing temperatures are, one may think about a different functional form! The temperature doesn't exceed about 85ª (F) in the data, but it seems implausible that people will still go out into the 100s. 
+  
+Intercept Interpretation: 
+
+- Because I have centered both temperature and wind speed, the intercept corresponds to the predicted number of riders on a given day when the temperature and wind speed are both average. Consistent with the previous model, the number of riders expected on days of average temperature and wind speed are about 3,482. 
+
+# Q6
+
+### Extending the model to new data 
+
+Given the above model, compute the predicted number of riders on a given day with the following new data.
+
+I will note here that the model I estimated above used mean centered temperature and wind speed variables. To proceed, I can do three things - refit the previous model without mean centered variables or either center the new data with respect to itself or add the new data to the existing data frame and center with respect to the whole data frame. 
+
+To maintain consistency with the homework, I'll refit the previous model without mean centered variables and revisit the other options later. 
+
+
+```{r}
+pred_df <- tibble(
+  situation = 1:3, 
+  wind_kph = c(15, 5, 40), 
+  temp_celc = c(25, 15, 10)
+)
+
+# Refitting the previous model without mean centering 
+# Note that the intercept changes to 942 for temp and wind = 0 
+m <- lm(rides ~ temp_celc + wind_kph, 
+            data = bikes)
+m %>% 
+  tidy()
+  
+
+(m_augment <- augment(m,
+                   newdata = pred_df))
+
+```
+
+
+When we refit the model (without mean centering) with the new data, we can generate predictions for new data. 
+In the first situation, with pleasant temperature (about 77ª F) and moderate wind speed (about 9 mph), there model predicts about 3752 riders. However, in the second situation, despite having far less wind, when it is colder (about 59ª F), the model predicts a drop of almost 1,000 riders compared to the first situation. In the final situation where it is even colder (about 50ª F) and with high winds, the riders predicted drops to 317. 
+
+
+## Q7 
+
+### Adding `weekend` to the model 
+
+```{r}
+bikes_small <- bikes %>% 
+  select(rides, temp_celc, wind_kph, weekend) %>% 
+  mutate(weekend = if_else(weekend == "TRUE", 1, 0))
+
+bikes <- bikes %>% 
+    mutate(weekend = if_else(weekend == "TRUE", 1, 0))
+  
+m2 <- lm(rides ~ temp_celc + wind_kph + weekend, 
+          data = bikes_small)
+
+
+m2 %>% 
+  tidy()
+
+```
+
+Based on this model, adjusting for the temperature and wind speed, the number of riders is estimated to be about 714 fewer on the weekend than on any weekday. 
+
+
+  
+## Q8 
+
+### Predicting riders with centered variables
+
+What are the predicted number of riders on a weekend and weekday with average temperature and wind speed. 
+
+Before we execute any code, we should recognize that whatever the predicted number of riders are, the weekday will have about 714 more riders. 
+
+```{r}
+pred_df2 <- tibble(
+  situation = 1:2, 
+  temp_celc = rep(mean(bikes$temp_celc), 2), 
+  wind_kph = rep(mean(bikes$wind_kph), 2), 
+  weekend = c(0, 1)
+)
+
+
+augment(m2, 
+        newdata = pred_df2) %>% 
+  select(weekend, "predicted riders" = .fitted)
+
+```
+
+As we noted before, the weekday is estimated to have about 714 more riders and we see that the weekday estimate with average climate conditions is about 3,683 and the weekend with the same conditions is estimated to have 713 less with 2,970 riders. 
+
+
+## Q9 
+
+### Residuals 
+
+```{r}
+
+m2_augment <- augment(m2, se_fit = TRUE)
+
+
+m2_augment %>% 
+  filter(.resid == max(abs(.resid))) 
+
+m2_augment %>% 
+  filter(.resid == min(.resid))
+
+# Largest absolute residual is -3490 on a day with 20 rides, 22 degrees celsius and 14.9 wind kph 
+
+bikes %>% 
+  filter(rides == 20)
+```
+
+The date with the largest absolute residual of -3490 also had the least number of rides with 20. This date was October 29, 2012 - also known as the first day of Hurricane Sandy. 
+
+
+
+
+
+
+
+
+
+
+

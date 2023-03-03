@@ -1,0 +1,490 @@
+---
+title: "HW: Modern Dive Ch. 6"
+subtitle: "Gender Employment Data Exercises" 
+author: "Samuel Snelson"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    theme: paper
+    df_print: kable
+    toc: TRUE
+    toc_float: 
+      collapsed: FALSE
+      smooth_scroll: FALSE
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(janitor)
+library(broom)
+library(patchwork)
+theme_set(theme_light(base_family = "Avenir"))
+```
+
+Importing gender employment data from Steve's github.
+
+```{r}
+gender_employ <- read.csv("https://raw.githubusercontent.com/vaiseys/223_course/main/Data/gender_employment.csv") %>% 
+  clean_names() %>% 
+  rename("major" = major_category, 
+         "minor" = minor_category, 
+         "workers" = total_workers, 
+         "worker_m" = workers_male, 
+         "worker_f" = workers_female, 
+         "female_pct" = percent_female, 
+         "earnings_tot" = total_earnings, 
+         "earning_m" = total_earnings_male, 
+         "earning_f" = total_earnings_female, 
+         "earning_ratio" = wage_percent_of_male) %>%
+  mutate(all_earning_ratio = earning_f / earning_m, 
+         year_c = year - 2013, 
+         major_lab = str_replace(str_replace(major, "and", "\n"), ",", "\n"), 
+         female_pct_c = female_pct - mean(female_pct))
+  
+```
+
+We'll begin by looking at what variables are in this data set and what format the data are in.
+
+```{r}
+glimpse(gender_employ)
+```
+
+We are interested here in how the ratio of women's to men's earnings has changes over time and is different across occupational sectors.
+
+I notice that some of the missing values in the ratio variable are not a result of missing data on either men's or women's earnings. Above I computed the ratio of women's to men's earnings and plot them above. However, to be consistent with the homework, I'll use the variable provided.
+
+```{r}
+# Plotting with earning ratio data 
+p1 <- ggplot(gender_employ, 
+             aes(year, earning_ratio)) + 
+  geom_jitter(alpha = 0.25) + 
+  geom_smooth(method = "lm", 
+              color = "blue") + 
+  labs(title = "Women's Earnings Relative to Men's", 
+       x = "year", 
+       y = "ratio or women's to men's earnings")
+
+# Plotting with all available data on mens and womens earnings
+pAside <- ggplot(gender_employ, aes(year, all_earning_ratio)) + 
+  geom_jitter(alpha = 0.25) + 
+  geom_smooth(method = "lm", 
+              color = "blue") +
+  labs(title = "Women's Earnings Relative to Men's",
+       caption = "Note: Values computed from all available data.",
+       x = "year", 
+       y = "ratio or women's to men's earnings")
+
+# Plot with selected data
+p1
+
+# Plot with all data on womens and mens earnings 
+pAside
+```
+
+## Q1
+
+### Parallel Model
+
+First, we'll define the reference category for the major occupational sector variable as Management, Business, and Financial.
+
+```{r}
+gender_employ <- gender_employ %>% 
+  mutate(major = as.factor(major), 
+         major = relevel(major, ref = "Management, Business, and Financial"))
+```
+
+Now we'll compute the regression model assuming that the year of measurement and the major occupational sector represent separate direct effects. In other words, the ratio of womens to mens earnings change at the same rate over time across all major occupational sectors.
+
+```{r}
+# Fitting model with lm()
+parallel_model <- lm(earning_ratio ~ year_c + major, 
+                     data = gender_employ)
+
+
+# Getting model parameters
+(parallel_tidy <- tidy(parallel_model, se_fit = TRUE))
+
+
+```
+
+This table looks a bit strange but can be interpreted without much issue. The estimate term for the variable year represents the slope for all levels of the major occupational sectors. This means that for all such sectors, the ratio of womens to mens earnings increases each year by about 0.2% points.
+
+I have modified the year variable such that the intercept for all levels refers to the ratio of womens to mens earnings in 2013. The intercept refers to this ratio for the reference category Business, Management, and Finance. Each other level's ratio in 2013, the reference intercept can be added to the term for each corresponding level. For example, in Production, Construction, and Material Moving, the estimated ratio (in percent) of womens to mens earnings in 2013 is \$ 80.2 - 1.31 \approx 79% \$.
+
+### Wage percentage of male income for Sales and Office Occupations in 2015 and 2016
+
+To calculate the predicted value of the wage percentage, or ratio as I have been referring to it as, we can first write out the equation for the model.
+
+\$\$
+
+\begin{align}
+\text{Wage Ratio}_i =& \ \beta_1 Year_i + \sum_{j = 0}^8\beta_j Occ_{ij} \\ 
+\\
+
+\text{Wage Ratio}_i =& \ 80.2 (Occ_0) + 0.192(Year_i) + 6.32(Occ_1) + \\ & \ 5.76(Occ_2) + 5.52(Occ_3) + 4.91(Occ_4) - \\ & \ 1.31(Occ_5) + 3.33(Occ_6) + 6.08(Occ_7)
+
+\end{align}
+
+\$\$
+
+While this looks formidable, there are merely two variables represented on the right-hand side of the equation - year as one variable and major occupational sector broken into its 8 levels (with the reference level as $Occ_0$). Besides the reference category, the levels correspond alphabetically with the coefficients.
+
+The sixth occupation coefficient refers to Sales and Office Occupations. To obtain the predicted outcome fro Sales and Office Occupations in 2015, we can input these values into the equation (noting that the desired major sector "turns on" the sixth coefficient and the year input is converted to 2 because of the variable centering on 2013).
+
+$$
+\begin{align}
+\text{Wage Ratio}_i =& \ 80.2 (Occ_0) + 0.192(Year_i) + 3.33(Occ_6) \\ 
+\underline{83.9} =& \  80.2(1) + 0.192(2) + 3.33(1) 
+\end{align}
+$$
+
+The predicted ratio of womens to mens earnings for Sales and Office Occupations in 2015 is about 83.9%.
+
+To get the predicted value for 2016, we can simply add the year term, 0.192, to the previous value, to get about 84.1%
+
+## Q2
+
+### Visualizing parallel slopes assumption
+
+As we begun by visualizing the raw data with a linear fit without respect to major occupational sector differences, let's now visualize the same relationship but with attention to sector differences.
+
+```{r}
+
+# Visualizing overlay of model predictions on data by major occupational sector 
+p2 <- ggplot(gender_employ, 
+       aes(year, earning_ratio)) + 
+  geom_jitter(alpha = 0.25) + 
+  geom_smooth(method = "lm", 
+              color = "blue") + 
+  facet_wrap(~ major) +
+  labs(title = "Women's Earnings Relative to Men's", 
+       x = "year", 
+       y = "ratio of women's to men's earnings")
+
+# Showing plot 
+p2
+
+```
+
+### Is parallel slopes reasonable?
+
+To assess whether the parallel slopes model is reasonable, I'll get the predicted values and a confidence interval range and plot these estimates and the observed data.
+
+```{r}
+# Getting predicted values and interval ranges
+parallel_augment = augment(parallel_model, se_fit = TRUE) %>% 
+  distinct(year_c, major, .se.fit, .fitted) %>% 
+  mutate(lower = .fitted + ((qnorm(0.025) * .se.fit)), 
+         upper = .fitted + ((qnorm(0.975) * .se.fit)), 
+         major_lab = str_replace(str_replace(major, "and", "\n"), ",", "\n"), 
+         year = year_c + 2013)
+
+# Plot of estimates and data together 
+p3 <- parallel_augment %>% 
+  group_by(major, year) %>% 
+  ggplot() +
+  geom_jitter(data = gender_employ, 
+              aes(year, earning_ratio), 
+              alpha = 0.2) +
+  geom_ribbon(aes(year, 
+                  ymin = lower, 
+                  ymax = upper), 
+              fill = "blue",
+              alpha = 0.45) +
+  geom_line(aes(year, .fitted), 
+            color = "black") + 
+  facet_wrap(~ major_lab) + 
+  theme(strip.text = element_text(color = "black"), 
+        strip.background = element_rect(color = "grey20", 
+                                        fill = "grey85"))
+
+# Show plot 
+p3
+
+```
+
+As we can see with this plot where all the slopes are the same (with different intercepts), the relationship appears to be quite small in the context of all the data. To get a closer look at the slopes, we'll look just the estimates themselves for the earning ratio.
+
+```{r}
+# Plot of estimates themselves
+p4 <- parallel_augment %>% 
+  group_by(major, year) %>% 
+  ggplot() +
+  geom_ribbon(aes(year, 
+                  ymin = lower, 
+                  ymax = upper), 
+              fill = "cornflowerblue",
+              alpha = 0.35) +
+  geom_line(aes(year, .fitted), 
+            color = "black") + 
+  facet_wrap(~ major_lab) + 
+  theme(strip.text = element_text(color = "black"), 
+        strip.background = element_rect(color = "grey20", 
+                                        fill = "grey85"))
+
+# Show plot 
+p4
+```
+
+Looking at just the lines and intervals shows more clearly that each major occupational sector has a different intercept. It is not very clear whether the parallel slopes model is constraining what would otherwise be different slopes. The middle panel, for Natural Resources, Construction, and Maintenance, may have otherwise had somewhat of a more positive relationship.
+
+## Q3
+
+### Interaction Model
+
+Above we fit a model assuming that year and major occupational sector contributed separate effects. Now we'll test a model which allows the percentage of womens earnings relative to mens vary differently across different levels of either time or major sector.
+
+```{r}
+# Fitting an interaction model 
+interact_model <- lm(earning_ratio ~ year_c * major, 
+                     data = gender_employ)
+
+# Model parameters
+(interact_tidy <- tidy(interact_model, 
+                       se_fit = TRUE, 
+                       conf.level = 0.95))
+
+```
+
+Now there is a whole lot going on here, but it can be reduced to three sets of terms - the year variable, the terms for each major occupational sector, and the interaction terms (representing the product of each major level with the year variable).
+
+$$
+\begin{align}
+\text{Wage Ratio}_i = \beta_1Year_i + \sum_{j = 0}^8 \beta_jOcc_{ij} + \sum_{k = 9}^{16}\beta_k \times Year_i \times Occ_{ik}
+\end{align}
+$$ I've shrunken the full equation for the sake of not writing out 16 terms. What is important to note about interaction models of this form is that the final sequence of terms where the product of the year and occupational sector is taken, this represents the additional contribution which may allow the slopes to vary across occupational sectors.
+
+### Visualizing interaction
+
+The whole point of considering interaction is to allow slopes to vary across the levels of some variable (here major occupational sector). So, we'll now look at what the slopes look like when you let them vary.
+
+```{r}
+
+# Plotting predictions on observations
+interact_augment <- augment(interact_model, se_fit = TRUE) %>% 
+  
+  # for each distinct  year, major, predicted value and standard error
+  distinct(year_c, major, .se.fit, .fitted) %>% 
+  
+  # produce lower and upper 95% CI bounds
+  mutate(lower = .fitted + ((qnorm(0.025) * .se.fit)), 
+         upper = .fitted + ((qnorm(0.975) * .se.fit)), 
+         
+         # Adding newline to improve readability
+         major_lab = str_replace(str_replace(major, "and", "\n"), ",", "\n"),
+         
+         # de-centering
+         year = year_c + 2013)
+
+
+# Plotting predictions on data with 95% CI 
+p5 <- interact_augment %>% 
+  ggplot() + 
+  
+  geom_jitter(data = gender_employ, 
+             aes(year, earning_ratio), 
+             alpha = 0.2) + 
+  
+  # predictions for each year 
+  geom_line(aes(year, .fitted), 
+            linewidth = 1.005, 
+            color = "blue") +
+  
+  # overlaying 95% CIs 
+  geom_ribbon(aes(year, 
+                  ymin = lower, 
+                  ymax = upper), 
+              fill = "cornflowerblue", 
+              alpha = 0.5) +
+  
+  facet_wrap(~ major_lab)  + 
+  
+  # Coloring of facet panels
+  theme(strip.text = element_text(color = "black"), 
+        strip.background = element_rect(color = "grey20", 
+                                        fill = "grey85")) + 
+  labs(title = "Percent of Mens Earnings Women Get Across Occupational Sectors",
+       subtitle = "blue line is predicted values",
+       x = "year", 
+       y = "percent of mens earnings women get ")
+
+
+
+# Plotting predictions without data with 95% CI 
+p6 <- interact_augment %>% 
+  ggplot() + 
+  
+  # predictions for each year 
+  geom_line(aes(year, .fitted), 
+            linewidth = 1.005, 
+            color = "blue") +
+  
+  # overlaying 95% CIs 
+  geom_ribbon(aes(year, 
+                  ymin = lower, 
+                  ymax = upper), 
+              fill = "cornflowerblue", 
+              alpha = 0.5) +
+  
+  facet_wrap(~ major_lab)  + 
+  
+  # Coloring of facet panels
+  theme(strip.text = element_text(color = "black"), 
+        strip.background = element_rect(color = "grey20", 
+                                        fill = "grey85")) + 
+  labs(title = "Percent of Mens Earnings Women Get Across Occupational Sectors",
+       subtitle = "blue line is predicted values",
+       x = "year", 
+       y = "percent of mens earnings women get ")
+
+# Show plots
+p5
+p6
+```
+
+Like I suspected earlier the most apparent change is the slope of the panel for Natural Resources, Construction, and Maintenance which is more positive. That is, in this interval of time, the percentage of men's earnings women get has risen slighly faster than other occupational sectors - with an increase of about 82% to 88% from 2013 to 2016.
+
+### "Computer, Engineering, and Science" and "Service" in 2016
+
+Rather than write out the formulas by hand (or keyboard), we'll use the new data argument of `augment()` to get it for us!
+
+```{r}
+(augment(interact_model, 
+         newdata = tibble(year_c = 3, 
+                          major = c("Computer, Engineering, and Science",
+                                    "Service")),
+         se_fit = TRUE))
+```
+
+In 2016, the Computer, Engineering, and Science major occupational sector is estimated to have women's earnings be about 87% of men's earnings. For the Service sector in 2016, women are estimated to have earned about 86% of what men earned.
+
+## Q4
+
+### Why parallel or interaction?
+
+With some basic knowledge of statistics and modeling, anyone can fit an interaction model. The real question is whether or not is makes sense in the substantive context of the data. This is the part of statistics where we must depart from the pixels on the screen and really think about the relationships between the variables in the world. Of course we have various methods and metrics for comparing models (e.g., Information Criteria), but ultimately the model must make sense and be consistent with understandings and evidence abut the relationships.
+
+For instance, the Production, Transportation, and Material Moving panel appears to considerably decrease. But is this a statistical apparition or something really going on in the world. In this respect, we need more information on the topic. I am not thoroughly convinced that there is an interaction based on these plots or parameters themselves.
+
+## Q5
+
+### Simple Fit
+
+We'll not consider what the relationship between the percent of women in a major occupational sector and the year have on the percentage of mens earnings women get.
+
+```{r}
+simple_fit <- lm(earning_ratio ~ year_c, 
+                 data = gender_employ)
+
+(simple_tidy <- tidy(simple_fit, conf.int = TRUE))
+
+```
+
+In this simple model of earnings inequality using the year as a predictor, we see that in 2013, the average percentage of mens earnings women got was about 83.7 across all occupations. For each year from 2013 to 2016, this percentage value is expected to increase by about 0.201.
+
+### Correlation between year, earning disparity, and female percentage
+
+Now let's consider what happens when we take into consideration the percent of women in a given occupation.
+
+```{r}
+gender_employ %>% 
+  select(year, earning_ratio, female_pct) %>% 
+  cor(use = "complete.obs")
+```
+
+Most notably, there appears to be about a 0.1 correlation between the percentage of women in an occupation and their earnings relative to men. More concretely, when there are many women in an occupation there is a weak positive association with their earnings relative to men.
+
+### Multiple Fit
+
+```{r}
+multiple_fit <- lm(earning_ratio ~ year_c + female_pct_c, 
+                   data = gender_employ)
+
+
+(multiple_tidy <- tidy(multiple_fit,
+                       se_fit = TRUE,
+                       conf.int = TRUE))
+
+```
+
+Based on the model parameters, we see that in 2013 and in occupations with an average percent of women, the estimated percent of mens earnings women get is about 83%. For each new year, adjusting for the percent of women in an occupation, that percent is estimated to increase by about 0.197 % points. For each increase of 10 % points in the percent of women in an occupation, adjusting for the year, the percent of mens earnings women get is estimated to increase by about 0.425 % points.
+
+```{r}
+# getting predicted values and CI
+multiple_augment <- augment(multiple_fit,
+                            se_fit = TRUE) %>% 
+  distinct(year_c, female_pct_c, .fitted, .se.fit) %>% 
+  mutate(lower = .fitted + ((qnorm(0.025) * .se.fit)), 
+         upper = .fitted + ((qnorm(0.975) * .se.fit)), 
+         year = year_c + 2013, 
+         female_pct = female_pct_c + mean(gender_employ$female_pct))
+
+# Plotting earnings disparity by percent women in occupation (over time) 
+
+ggplot(multiple_augment) + 
+  
+  geom_point(data = gender_employ, 
+             aes(female_pct, earning_ratio), 
+             alpha = 0.2) +
+  
+  geom_line(aes(female_pct, .fitted), 
+            color = "black") +
+  
+  geom_ribbon(aes(female_pct, 
+                  ymin = lower, 
+                  ymax = upper),  
+              fill = "cornflowerblue", 
+              alpha = 0.5) +
+  
+  facet_grid(~ year) + 
+  
+  labs(title = "Percent of Women in Occupations and Earnings Inequality", 
+       subtitle = "each point is an occupation", 
+       x = "% women in an occupation", 
+       y = "percent of mens earnings women get") + 
+  
+  # Readability of ticks 
+  scale_y_continuous(breaks = seq(from = 50, to = 120, by = 10)) +
+  
+  # Coloring of facet panels
+  theme(strip.text = element_text(color = "black"), 
+        strip.background = element_rect(fill = "grey85"))
+
+```
+
+Based on this visualization, we can see that there is a positive relationship between the percent of women in an occupation and the percent of mens earnings women get in that occupation. This effect appears to be greater than the change in earnings equality over time because the predicted values stay at the same level over time. Further inquiry can be given to differences in this relationship between occupation sectors if further attention is of interest.
+
+## Q6
+
+### Model Comparison with $R^2$!?
+
+We'll briefly look at the $R^2$ for both the simple model and the multiple model. At the outset, I'll make clear that a higher $R^2$ is not a trustworthy indicator that a model is better (with respect to explanation or prediction). As Nico has shown in the assignment, $R^2$, or the coefficient of determination, increases when more variables are added to a model - regardless of whether they actually improve the explanatory or predictive accuracy!
+
+```{r}
+simple_glance <- glance(simple_fit)
+
+multiple_glance <- glance(multiple_fit)
+
+(r_2 <- rbind(simple_glance, multiple_glance) %>% 
+    mutate(model = c("Simple", "Multiple")) %>% 
+    select(model, r.squared))
+
+```
+
+WOW, the $R^2$ increased over 20x! While this seems like a lot, $R^2$ is not the most informative measure. Let's add some random noise from an independent normal distribution to see how it effects the $R^2$.
+
+```{r}
+# Adding random noise to R^2
+gender_employ$random_noise <- rnorm(nrow(gender_employ), 0, 4)
+
+random <- lm(earning_ratio ~ year_c + female_pct_c + random_noise, 
+             data = gender_employ)
+
+
+(random_glance <- glance(random) %>% 
+    mutate(model = "Random") %>% 
+    select(model, r.squared))
+```
+
+Random noise increased the model slightly, but obviously should not be taken as an indication of improved accuracy. However, as a final note, this is not to say that one should completely ignore $R^2$ but to be aware of its tendency to fluctuate with uninformative variables.
