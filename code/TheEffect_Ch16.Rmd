@@ -1,7 +1,7 @@
 ---
 title: "Chapter 16: Fixed Effects"
 author: "Samuel Snelson"
-date: "Updated `r Sys.Date()`"
+date: "`r Sys.Date()`"
 output: html_document
 ---
 
@@ -9,15 +9,13 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
 library(tidyverse)
 library(rstanarm)
-library(modelsummary)
-library(performance)
 
 theme_set(theme_light(base_family = "Avenir"))
 ```
 
 Follow the below instructions and turn in both your code and results:
 
->1. Load the `mathpnl.csv` data file provided (in R or Python store it as `mp`), which comes from Leslie Papke and consists of data at the school district level, and was featured in the Wooldridge (2010) textbook. 
+**1. Load the `mathpnl.csv` data file provided (in R or Python store it as `mp`), which comes from Leslie Papke and consists of data at the school district level, and was featured in the Wooldridge (2010) textbook.** 
    
    We are only going to be working with a few variables. Limit the data to these variables:
    
@@ -33,27 +31,23 @@ mp <- read.csv("https://raw.githubusercontent.com/NickCH-K/TheEffectAssignments/
   select(distid, year, math4, expp, lunch) |> 
   # changing scale of per pupil expenditure to get scale of every $100 rather than $1 and free lunch eligible % from 1% to 10%. 
   mutate(expp_scale = expp / 100, 
-         lunch_scale = lunch / 10)
+         lunch_scale = lunch / 10, 
+         year_scale = year - min(year))
 ```
 
    
->2. Panel data is often described as "N by T". That is, the number of different individuals N and the number of time periods T. Write code that outputs what N and T are in this data.
+**2. Panel data is often described as "N by T". That is, the number of different individuals N and the number of time periods T. Write code that outputs what N and T are in this data.**
 
 ```{r}
 mp |> 
-  summarise(n_schools = length(unique(distid)), 
-            n_years = length(unique(year)))
-
-# Alternatively
-mp |> 
   group_by(year) |> 
   summarize(n_schools = n()) 
-
 ```
 
+In this data, there are 550 districts per year (N) and 7 years in which data were collected (T). 
 
 
->3. A *balanced* panel is one in which each individual shows up in every single time period. You can check whether a data set is a balanced panel by seeing whether the number of unique time periods each individual ID shows up in is the same as the number of unique time periods, or whether the number of unique individual IDs in each time period is the same as the total number of unique individual IDs. Think to yourself a second about why these procedures would check that this is a balanced panel. Then, check whether this data set is a balanced panel.
+**3. A *balanced* panel is one in which each individual shows up in every single time period. You can check whether a data set is a balanced panel by seeing whether the number of unique time periods each individual ID shows up in is the same as the number of unique time periods, or whether the number of unique individual IDs in each time period is the same as the total number of unique individual IDs. Think to yourself a second about why these procedures would check that this is a balanced panel. Then, check whether this data set is a balanced panel.**
 
 (hint: there are many ways to do this, but the easiest is to limit the data to just individual ID and year, drop any duplicates (keeping only `unique()` values in R, `drop duplicates` in Stata, or `.drop_duplicates()` in Python), and tabulating how many times each year appears (`table()` in R, `tabulate` in Stata, `.value_counts()` in Python))
 
@@ -74,21 +68,19 @@ mp |>
 
 ```
 
+Because our indicator of unbalanced districts is zero, this tells us that every district has the maximum number of year-waves, seven.
 
->4. Run an OLS regression, with no fixed effects, of `math4` on `expp` and `lunch`. Store the results as `m1`.
 
-*Language-specific instructions*: 
+**4. Run an OLS regression, with no fixed effects, of `math4` on `expp` and `lunch`. Store the results as `m1`.**
 
 
 ```{r}
 # predicting math scores based on free lunch and per pupil funding (default priors)
-m1 <- stan_glm(math4 ~ expp_scale + lunch_scale, 
-               family = gaussian(), 
-               data = mp) 
+m1 <- lm(math4 ~ expp_scale + lunch_scale, 
+         data = mp) 
 
+msummary(m1, metrics = "common")
 
- 
-summary(m1)
 ```
 
 
@@ -97,7 +89,7 @@ Adjusting for the percent of students eligible for free lunch, this model predic
 Secondly, adjusting for a distict's per pupil expenditure, for every 10% increase in the number of students eligible for free lunch, the percentage of 4th graders who meet satisfactory math marks is estimated to decrease by -3.8%. 
 
 
->5. Modify the model in step 4 to include fixed effects for `distid` "by hand". That is, subtract out the within-`distid` mean of `math4`, `expp`, and `lunch`, creating new variables `math4_demean`, `expp_demean`, and `lunch_demean`, and re-estimate the model using those variables, storing the result as `m2`. 
+**5. Modify the model in step 4 to include fixed effects for `distid` "by hand". That is, subtract out the within-`distid` mean of `math4`, `expp`, and `lunch`, creating new variables `math4_demean`, `expp_demean`, and `lunch_demean`, and re-estimate the model using those variables, storing the result as `m2`.**
 
 ```{r}
 mp_within <- mp |> 
@@ -106,13 +98,11 @@ mp_within <- mp |>
          expp_scale_demean = expp_scale - mean(expp_scale), 
          lunch_scale_demean = lunch_scale - mean(lunch_scale))
 
-m2 <- stan_glm(math4_demean ~ expp_scale_demean + lunch_scale_demean, 
-               family = gaussian(), 
+m2 <- lm(math4_demean ~ expp_scale_demean + lunch_scale_demean, 
                data = mp_within)
 
 
-summary(m2)
-
+msummary(m2, metrics = "common")
 ```
 
 This is interesting. The effect of the percent of free lunch eligible students reversed (assuming I didn't do anything incorrectly). 
@@ -122,7 +112,7 @@ Adjusting for the percentage of students in a district eligible for free lunch, 
 Adjusting for a district's per pupil expenditure, for each additional 10% of students eligible for free lunch, the percentage of 4th graders who meet satisfactory math marks is estimated to increase by 3.1%. This one sounds weird, so I'm concerned I did something wrong here! 
 
 
->6. Next we're going to estimate fixed effects by including `distid` as a set of dummies. This can be extremely slow, so for demonstration purposes use only the first 500 observations of your data (don't get rid of the other observations, though, you'll want them for the rest of this assignment). Run the model from step 4 but with dummies for different values of `distid`, saving the result as `m3`. Then, do a joint F test on the dummies (see Chapter 13), and report if you can reject that the dummies are jointly zero at the 99% level.
+**6. Next we're going to estimate fixed effects by including `distid` as a set of dummies. This can be extremely slow, so for demonstration purposes use only the first 500 observations of your data (don't get rid of the other observations, though, you'll want them for the rest of this assignment). Run the model from step 4 but with dummies for different values of `distid`, saving the result as `m3`. Then, do a joint F test on the dummies (see Chapter 13), and report if you can reject that the dummies are jointly zero at the 99% level.**
 
 ```{r}
 # we still have balance here
@@ -132,8 +122,7 @@ mp_small <- mp |>
 m3 <- lm(math4 ~ expp_scale + lunch_scale + factor(distid), 
          data = mp_small)
 
-
-summary(m3)
+msummary(m3, metrics = "common")
 
 library(car)
 linearHypothesis(m3,matchCoefs(m3,'distid'))
@@ -141,25 +130,74 @@ linearHypothesis(m3,matchCoefs(m3,'distid'))
 ```
 
 
+I am still getting some somewhat strange estimated. The effect of the percent of students eligible for free lunch on math scores seems counterintuitive because I would anticipate that it would have a negative or null effect on the outcome, not positive and significant. 
+
 Based on the F test, we cannot reject the null that all the districts are jointly zero. 
 
 
->7. Now we will use a specially-designed function to estimate a model with fixed effects. (Using the whole data set once again), use `feols()` from the **fixest** package in R, `reghdfe` from the **reghdfe** package in Stata, or `PanelOLS` from **linearmodels** in Python to estimate the model from step 4 but with fixed effects for `distid`. Save the result as `m4`. Include standard errors clustered at the `distid` level.
+**7. Now we will use a specially-designed function to estimate a model with fixed effects. (Using the whole data set once again), use `feols()` from the *fixest* package in R, `reghdfe` from the *reghdfe* package in Stata, or `PanelOLS` from *linearmodels* in Python to estimate the model from step 4 but with fixed effects for `distid`. Save the result as `m4`. Include standard errors clustered at the `distid` level.**
+
+```{r}
+library(fixest)
+
+m4 <- feols(math4 ~ expp_scale + lunch_scale | distid, 
+            data = mp)
+
+msummary(m4, metrics = "common")
+```
+
+This model is producing similar results as we got with `m2` where we used distid fixed effects by substracting district-level means of all variables. However now our standard errors are about doubled. 
 
 
->8. Now add fixed effects for year to your model from step 7 to create a two-way fixed effects model. Keep the standard errors clustered at the `distid` level. Save the results as `m5`.
+**8. Now add fixed effects for year to your model from step 7 to create a two-way fixed effects model. Keep the standard errors clustered at the `distid` level. Save the results as `m5`.**
+
+```{r}
+m5 <- feols(math4 ~ expp_scale + lunch_scale | distid + year_scale, 
+            data = mp)
+
+msummary(m5, metrics = "common")
 
 
->9. Using `modelsummary()` from **modelsummary** in R, `esttab` from **estout** in Stata, or `Stargazer` from **stargazer.stargazer** in Python, make a regression table including `m1` through `m5` in the same table so you can compare them all. Read the documentation of your command to figure out how to include the `expp`, `lunch`, `expp_demean`, and `lunch_demean` predictors in the table without clogging the thing up with a bunch of dummy coefficients from `m3`.
+
+```
+
+
+
+**9. Using `modelsummary()` from *modelsummary* in R, `esttab` from *estout* in Stata, or `Stargazer` from *stargazer.stargazer* in Python, make a regression table including `m1` through `m5` in the same table so you can compare them all. Read the documentation of your command to figure out how to include the `expp`, `lunch`, `expp_demean`, and `lunch_demean` predictors in the table without clogging the thing up with a bunch of dummy coefficients from `m3`.**
+
+```{r}
+msummary(list(m1, m2, m3, m4, m5), 
+         coef_omit = "distid", 
+         metrics = "common")
+```
+
 
 Write down two interesting things you notice from the table. Multiple possible answers here.
 
+As I have noted before, I am finding somewhat strange the movement in the coefficient for the percent of students eligible for free lunch. I think I may have made some mistake in the models because I am surprised that in model 3 the estimate switched direction and in magnitude. What is separately of note is that when we account for TWFE for district and year, both the effects for free lunch eligibility and district per pupil expenditure seem to go to zero. 
 
->10. Finally, we'll close it out by using correlated random effects instead of fixed effects (see 16.3.3). You already have `expp_demean` and `lunch_demean` from earlier. Now, modify the code from that slightly to add on `expp_mean` and `lunch_mean` (the mean within `distid` instead of the value *minus* that mean). Then, regress `math4` on `expp_demean`, `lunch_demean`, `expp_mean`, and `lunch_mean`, with random effects for `distid` using `lmer()` from **lme4** in R, `xtreg, re` in Stata, or `RandomEffects` from **linearmodels** in Python. Show a summary of the regression results.
 
-*Language-specific instructions*: 
+**10. Finally, we'll close it out by using correlated random effects instead of fixed effects (see 16.3.3). You already have `expp_demean` and `lunch_demean` from earlier. Now, modify the code from that slightly to add on `expp_mean` and `lunch_mean` (the mean within `distid` instead of the value *minus* that mean). Then, regress `math4` on `expp_demean`, `lunch_demean`, `expp_mean`, and `lunch_mean`, with random effects for `distid` using `lmer()` from *lme4* in R, `xtreg, re` in Stata, or `RandomEffects` from *linearmodels* in Python. Show a summary of the regression results.**
 
-- In R, `lmer()` has a hard time with numeric variables as categorical indicators. Create a new, factor version of `distid` directly in the data before running the model, and use that instead.
 
+```{r}
+library(lme4)
+
+mp_within <- mp_within |> 
+  mutate(distid_fac = factor(distid)) |> 
+  group_by(distid) |> 
+  mutate(expp_scale_mean = mean(expp_scale), 
+         lunch_scale_mean = mean(lunch_scale))
+
+
+m6 <- lmer(math4 ~ (1 | distid_fac) + expp_scale_demean + lunch_scale_demean + expp_scale_mean + lunch_scale_mean, 
+                    data = mp_within)
+
+
+msummary(m6, metrics = "common")
+
+```
+
+This model using correlated random effects (i.e., multilevel) looks quite similar to `m2` which used district fixed effects. What is still surprising to me is that the model predicts that the higher the percent of students eligible for free lunch there are in a district, the higher the math scores for fourth graders. This seems incorrect! 
 
 
