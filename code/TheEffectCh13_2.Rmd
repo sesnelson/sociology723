@@ -6,7 +6,7 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
+knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(modelsummary)
 library(ggeffects)
@@ -17,8 +17,7 @@ theme_set(theme_light(base_family = "Avenir"))
 
 Follow the below instructions and turn in both your code and results:
 
-1. Load the `dengue.csv` file provided to you, or from [this site](https://vincentarelbundock.github.io/Rdatasets/csv/DAAG/dengue.csv). Documentation on the variables is available [here](https://vincentarelbundock.github.io/Rdatasets/doc/DAAG/dengue.html).
-
+1.  Load the `dengue.csv` file provided to you, or from [this site](https://vincentarelbundock.github.io/Rdatasets/csv/DAAG/dengue.csv). Documentation on the variables is available [here](https://vincentarelbundock.github.io/Rdatasets/doc/DAAG/dengue.html).
 
 ```{r}
 d <- read.csv("https://vincentarelbundock.github.io/Rdatasets/csv/DAAG/dengue.csv") |> 
@@ -26,8 +25,7 @@ d <- read.csv("https://vincentarelbundock.github.io/Rdatasets/csv/DAAG/dengue.cs
   drop_na()
 ```
 
-
-2. Run an OLS regression using average humidity to predict whether dengue was observed in the area, and look at the results.
+2.  Run an OLS regression using average humidity to predict whether dengue was observed in the area, and look at the results.
 
 I was confused for a moment but realized that NHK is asking for an linear probability model here.
 
@@ -36,23 +34,21 @@ m2 <- lm(dengue ~ humid,
          data = d)
 ```
 
-
 In R, use the `msummary()` function from the **modelsummary** package to display the results with the `stars = TRUE` option.
 
 ```{r}
 msummary(m2, stars = TRUE)
 ```
 
+3.  Write two sentences, one interpreting the intercept and one interpreting the slope.
 
-3. Write two sentences, one interpreting the intercept and one interpreting the slope.
+I'll preface this by saying that the intercept is really weird and I'll show a plot which captures why (hint hint: the LPM and negative probability [at least without adjustment]).
 
-I'll preface this by saying that the intercept is really weird and I'll show a plot which captures why (hint hint: the LPM and negative probability [at least without adjustment]). 
+Intercept: The predicted probability of a region recording a case of dengue given that the average humidity is 0 is about -0.4.
 
-Intercept: The predicted probability of a region recording a case of dengue given that the average humidity is 0 is about -0.4. 
+Slope: A one unit change in humidity is associated with an increase in the probability of dengue in a region by 0.05.
 
-Slope: A one unit change in humidity is associated with an increase in the probability of dengue in a region by 0.05. 
-
-But why the weird intercept? 
+But why the weird intercept?
 
 ```{r}
 ggpredict(m2, terms = "humid") |> 
@@ -70,20 +66,19 @@ ggpredict(m2, terms = "humid") |>
 
 ```
 
-Probabilities can only be within 0 and 1. Notice how the model makes predictions into the red territory where events are less than 0% probable and over 100% probable. This is where the -40% comes from with the intercept. 
+Probabilities can only be within 0 and 1. Notice how the model makes predictions into the red territory where events are less than 0% probable and over 100% probable. This is where the -40% comes from with the intercept.
 
-4. Get a set of summary statistics for the humidity variable and write a comment on how this can help you make sense of the intercept in the regression from step 2.
+4.  Get a set of summary statistics for the humidity variable and write a comment on how this can help you make sense of the intercept in the regression from step 2.
 
 ```{r}
 summary(d$humid)
 ```
 
-I'm not sure the point of NHKs question here - perhaps just that the intercept represents the probability of dengue in a region when the average humidity over a period is 0. There aren't any zeros in the data, but what really messes up the prediction is the simple use of the LPM which gives bad predictions outside of the central mass of probability density. 
+I'm not sure the point of NHKs question here - perhaps just that the intercept represents the probability of dengue in a region when the average humidity over a period is 0. There aren't any zeros in the data, but what really messes up the prediction is the simple use of the LPM which gives bad predictions outside of the central mass of probability density.
 
+5.  We might recognize that, if we're interested in the effect of humidity on Dengue, temperature might be on a back door. Add a control for temperature, rerun the regression, and show the results.
 
-5. We might recognize that, if we're interested in the effect of humidity on Dengue, temperature might be on a back door. Add a control for temperature, rerun the regression, and show the results.
-
-Immediately, we can see that temp is pretty highly left skewed. This will likely come into play as residuals may not be uniformly distributed (maybe foreshadowing a predictor transformation). 
+Immediately, we can see that temp is pretty highly left skewed. This will likely come into play as residuals may not be uniformly distributed (maybe foreshadowing a predictor transformation).
 
 ```{r}
 (p5 <- ggplot(d, aes(temp)) + 
@@ -95,7 +90,7 @@ Immediately, we can see that temp is pretty highly left skewed. This will likely
        y = ""))
 ```
 
-But we'll go ahead and add raw temp. 
+But we'll go ahead and add raw temp.
 
 ```{r}
 m5 <- lm(dengue ~ humid + temp, 
@@ -106,9 +101,9 @@ m5 <- lm(dengue ~ humid + temp,
 msummary(m5, stars = TRUE) 
 ```
 
-With the addition of temperature into our model of dengue, basically nothing changes. Model-fit is the same, out-of-sample prediction is the same, and the standard error is just about the same size as temperature's effect on dengue. 
+With the addition of temperature into our model of dengue, basically nothing changes. Model-fit is the same, out-of-sample prediction is the same, and the standard error is just about the same size as temperature's effect on dengue.
 
-6. Our dependent variable is binary, and we're getting predictions below zero, which we might not want. Rerun the regression from question 5 but as a logit model, and report the marginal effects of both slope coefficients.
+6.  Our dependent variable is binary, and we're getting predictions below zero, which we might not want. Rerun the regression from question 5 but as a logit model, and report the marginal effects of both slope coefficients.
 
 ```{r}
 # Sorry stan_glm(), we'll go with glm() for the moment to use msummary()
@@ -133,14 +128,11 @@ msummary(m6, stars = TRUE)
 
 ```
 
+Now we have funny looking logit coefficients (though not as funny as -0.4 probability). With this model the estimated probability of dengue being recorded in a region when average temperature and humidity are zero is -6.589 log-units. Quite funny right. We can just exponentiate and find that this intercept corresponds to a probability of $e^{-6.589} \approx 0.0014$ or 0.14% probability. Adjusting for average temperature, the estimated probability of dengue in a region increases by a factor of about 1.35 for each unit increase in humidity. Adjusting for average humidity, the estimated probability of dengue in a region increases by a factor of 1.04 for each degree increase in temperature (remember, a factor of 1 is no change).
 
-Now we have funny looking logit coefficients (though not as funny as -0.4 probability). With this model the estimated probability of dengue being recorded in a region when average temperature and humidity are zero is -6.589 log-units. Quite funny right. We can just exponentiate and find that this intercept corresponds to a probability of $e^{-6.589} \approx 0.0014$ or 0.14% probability. Adjusting for average temperature, the estimated probability of dengue in a region increases by a factor of about 1.35 for each unit increase in humidity. Adjusting for average humidity, the estimated probability of dengue in a region increases by a factor of 1.04 for each degree increase in temperature (remember, a factor of 1 is no change). 
+7.  A long one: Now let's say we're directly interested in the relationship between temperature and humidity. Run an OLS regression of humidity on temperature. Calculate the residuals of that regression, and then make a plot that will let you evaluate whether there is likely heteroskedasticity in the model. Rerun the model with heteroskedasticity-robust standard errors. Show both models, and say whether you think there is heteroskedasticity
 
-
-
-7. A long one: Now let's say we're directly interested in the relationship between temperature and humidity. Run an OLS regression of humidity on temperature. Calculate the residuals of that regression, and then make a plot that will let you evaluate whether there is likely heteroskedasticity in the model. Rerun the model with heteroskedasticity-robust standard errors. Show both models, and say whether you think there is heteroskedasticity
-
-First I'll run the OLS model for humidity on temperature and then get the predicted values without robust standard errors. 
+First I'll run the OLS model for humidity on temperature and then get the predicted values without robust standard errors.
 
 ```{r}
 # running standard OLS
@@ -153,7 +145,7 @@ m7_pred <- ggpredict(m7,
 
 ```
 
-Here are two plots showing the non-uniformity of the residuals. They show the same thing, the second is more standard practice where the y-axis is the distribution of residuals. Either way, the curvilinear shape makes it clear that there is heteroscedasticity. 
+Here are two plots showing the non-uniformity of the residuals. They show the same thing, the second is more standard practice where the y-axis is the distribution of residuals. Either way, the curvilinear shape makes it clear that there is heteroscedasticity.
 
 ```{r}
 
@@ -178,20 +170,16 @@ Here are two plots showing the non-uniformity of the residuals. They show the sa
          
 ```
 
-Let's now use robust standard errors and see what happens to the parameter estimates. 
+Let's now use robust standard errors and see what happens to the parameter estimates.
 
 ```{r}
 msummary(m7, stars = TRUE)
 msummary(m7, stars = TRUE, vcov = "robust")
 ```
 
-
 The only noticeable difference between the models' standard errors is with the intercept, which becomes larger when we use robust standard errors. At it appears to me, it doesn't appear to change the interpretation, but I understand that using robust standard errors can be an important way to address heteroscedasticity (particularly in the case of an LPM, for instance).
 
-
-
-
-8. In the graph in the last problem you may have noticed that for certain ranges of temperate, the errors were clearly nonzero on average. This can indicate a functional form problem. Run the model from question 7 again (with heteroskedasticity-robust standard errors), but this time use the logarithm of humidity in place of humidity. Add a sentence interpreting the coefficient on temperature. 
+8.  In the graph in the last problem you may have noticed that for certain ranges of temperate, the errors were clearly nonzero on average. This can indicate a functional form problem. Run the model from question 7 again (with heteroskedasticity-robust standard errors), but this time use the logarithm of humidity in place of humidity. Add a sentence interpreting the coefficient on temperature.
 
 ```{r}
 # making log of humidity
@@ -209,30 +197,23 @@ msummary(m8, stars = TRUE, vcov = "robust")
 
 Because we have run this model with the outcome in the log scale, the model parameters represent log-units. So we can exponentiate to return to the raw units of the outcome - with the condition that the model is multiplicative rather than additive.
 
-The predicted humidity value when average temperature in a region is zero is about 5.25 (humidity-units). 
+The predicted humidity value when average temperature in a region is zero is about 5.25 (humidity-units).
 
-This is a cool little mathematical property. 
+This is a cool little mathematical property.
 
 $$
 \begin{align}
-
-\ln(\text{humid}) &= 1.658 + 0.056\text{temp} \\ 
-
+\ln(\text{humid}) &= 1.658 + 0.056\text{temp} \\
 e^{\ln(\text{humid})} &= e^{1.658 + 0.056\text{temp}} \\
-
-\text{humid} &= e^{1.658} \times e^{0.056\text{temp}} \\ 
-
+\text{humid} &= e^{1.658} \times e^{0.056\text{temp}} \\
 &= 5.25 \times e^{0.056\text{temp}}
-
-end{align}
+\end{align}
 $$
 
-The cool thing, I think, is that when temp is zero, as goes the interpretation of the intercept, this gives $e^{0.056(0)} = 1$. Then, $5.25 \times 1$ is just itself, the intercept! How cool. 
+The cool thing, I think, is that when temp is zero, as goes the interpretation of the intercept, this gives $e^{0.056(0)} = 1$. Then, $5.25 \times 1$ is just itself, the intercept! How cool.
 
-But now for the whole point of the question - the slope. For each unit increase in temperature, humidity is estimated to increase by a factor of about 1.057. 
+But now for the whole point of the question - the slope. For each unit increase in temperature, humidity is estimated to increase by a factor of about 1.057.
 
+9.  Bonus challenge: figure out how I decided on a form where you log humidity and keep temperature linear.
 
-
-9. Bonus challenge: figure out how I decided on a form where you log humidity and keep temperature linear.
-
-I'm thinking it may be because you have negative temperature values but no negative humidity? 
+I'm thinking it may be because you have negative temperature values but no negative humidity?

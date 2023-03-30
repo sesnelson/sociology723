@@ -6,9 +6,10 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
+knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(rstanarm)
+library(modelsummary)
 
 theme_set(theme_light(base_family = "Avenir"))
 ```
@@ -122,7 +123,8 @@ mp_small <- mp |>
 m3 <- lm(math4 ~ expp_scale + lunch_scale + factor(distid), 
          data = mp_small)
 
-msummary(m3, metrics = "common")
+msummary(m3, metrics = "common", 
+         coef_omit = "distid")
 
 library(car)
 linearHypothesis(m3,matchCoefs(m3,'distid'))
