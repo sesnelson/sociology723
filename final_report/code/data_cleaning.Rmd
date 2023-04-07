@@ -1,0 +1,149 @@
+---
+title: "Children's Bureau Data"
+subtitle: "Merging datasets on child welfare outcomes from 2017 to 2021"
+author: "Samuel Snelson"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Documentation
+-----------------------
+
+This script organizes the following data sets from the Children's Bureau's public Child Welfare Outcomes Report Data (https://cwoutcomes.acf.hhs.gov/cwodatasite/). Note that the lowest level of each category section refers to the available data set (e.g., Time in Care Missing). 
+
+- Child Population Data 
+  - Total Child Population
+  - Child Population in Poverty
+  
+- Child Maltreatment Data
+  - Overview & Characteristics
+    - Maltreatment Types
+    - Child Fatalities
+  - Outcomes 1 and 2: Safety
+    - Maltreatment in Foster Care
+    
+- Foster Care Data
+  - Overview & Characteristics
+    - In Foster Care on the First Day of FY (Fiscal Year, October 1)
+    - Entered Foster Care During FY
+    - Caseworker Visits
+  - Permanency & Well-Being
+    - Outcome 6: Placement Stability
+      - In Care Less than 12 Months
+      - In Care at Least 12 Months but Less than 24
+      - In Care Longer than 24 Months
+      - Time In Care Missing
+
+
+These data sets are available separately across the above categories and across 2017 through 2021. This script binds each of these data sets together by these categories and by year. 
+
+
+```{r}
+
+# accessing list of files in data folder
+files <- list.files("final_report/raw_data/")
+
+# generating list of data frames for each dataset 
+  # for each element in files list
+data_list <- lapply(files, \(file) {
+  
+  # read in data with path concatted
+  read.csv(paste0("final_report/raw_data/", file)) |>
+    
+    # remove unwanted variable name formatting
+    janitor::clean_names() |> 
+    
+    # because multiple datasets have the same variable name, 
+    # we have to identify each (by renaming)
+    rename_with(
+      \(x) 
+      
+      # one solution, add filename to variables 
+      # minus year so they can be merged
+      paste(x, str_remove(
+        
+        # weird regex, but means the "_YEAR" part of filename
+        str_remove(file, "_[0-9]{4}(?=\\.)"), "\\.csv")
+        , sep = "_"),
+      
+      # state and year are same anyway (only matched variable 
+      # names present issue, but code above addresses anyway)
+      .cols = !c(state, year)) 
+}) 
+
+
+
+# replacement variable names
+replace <- c(
+  
+  # constants
+  "state", "year", 
+  
+  # caseworker visits
+  "delete1", "n_case_visits", "delete2", 
+  "pct_home_visit", "n_home_visit", "delete3", 
+  
+  # entered foster care in a given year
+  "n_entered_care", "delete4", 
+  
+  # child fatalities
+  "n_fatality", "fatality_rate",
+  
+  # counts on first day of given year
+  "n_first_day_count", "first_day_median_stay", 
+  
+  # maltreatment while in foster care
+  "pct_maltreat_in_care", "delete5", "n_in_care_check", 
+  
+  # percent maltreatment types
+  "pct_emotional", "pct_medical", "pct_neglect",
+  "pct_physical", "pct_sexual", "pct_traffic",
+  "pct_other_maltreat", "pct_missing_maltreat",  
+  
+  # state population measures
+  "child_populaton", "pct_child_poverty",
+  
+  # placement stability - greater than 24m in care
+  "two_minus_place_gt24","three_plus_place_gt24",           
+  "missing_gt24", "n_in_care_g24",   
+  
+  # placement stability - time in care missing
+  "two_minus_place_len_miss", "three_plus_place_len_missing",      
+  "missing_len_missing", "n_in_care_len_missing",
+  
+  # placement stability - less than 12m in care
+  "two_minus_place_lt12", "three_plus_place_lt12", 
+  "missing_lt12", "n_in_care_lt12",
+  
+  # placement stability - greater than 12m and less than 24m in care
+  "two_minus_place_lt24", "three_plus_place_lt24",
+  "missing_lt24", "n_in_care_lt24")
+
+
+# merging list of data frames, swapping replacement var names, dropping vars
+data <- reduce(data_list, bind_rows) |> 
+  group_by(state, year) |> 
+  summarize_all(funs(first(na.omit(.)))) |> 
+  rename_with(~ replace, everything()) |> 
+  select(-contains("delete"))  
+
+# removing everything except data from memory
+rm(data_list, files, replace)
+
+```
+
+
+With the completed dataset prepared, we'll write it back into the `Data/` folder in our project directory to be referenced later. 
+
+```{r}
+write.csv(data, "final_report/clean_data/child_welfare_data.csv", 
+          row.names = FALSE)
+```
+
+
+
