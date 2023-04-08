@@ -1,0 +1,259 @@
+---
+title: "Children's Bureau Data"
+subtitle: "Merging datasets on child welfare outcomes from 2017 to 2021"
+author: "Samuel Snelson"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Documentation
+-----------------------
+
+This script organizes the following data sets from the Children's Bureau's public Child Welfare Outcomes Report Data (https://cwoutcomes.acf.hhs.gov/cwodatasite/). Note that the lowest level of each category section refers to the available data set (e.g., Time in Care Missing). 
+
+- Child Population Data 
+  - Total Child Population
+  - Child Population in Poverty
+  
+- Child Maltreatment Data
+  - Overview & Characteristics
+    - Maltreatment Types
+    - Child Fatalities
+  - Outcomes 1 and 2: Safety
+    - Maltreatment in Foster Care
+    
+- Foster Care Data
+  - Overview & Characteristics
+    - In Foster Care on the First Day of FY (Fiscal Year, October 1)
+    - Entered Foster Care During FY
+    - Caseworker Visits
+  - Permanency & Well-Being
+    - Outcome 6: Placement Stability
+      - In Care Less than 12 Months
+      - In Care at Least 12 Months but Less than 24
+      - In Care Longer than 24 Months
+      - Time In Care Missing
+
+
+These data sets are available separately across the above categories and across 2017 through 2021. This script binds each of these data sets together by these categories and by year. 
+
+
+NOTES:
+---
+
+- In the initial_descriptives.Rmd file, we found that the number of foster youth in states across years were basically the same between the measures based on maltreatment percentages and placement stability. In some cases, one variable had missing data and in other cases the other variable had missing data. Because of the high degree of parity between them, they are merged in the same file to give a measure of the recorded population of foster youth across states and years (names `n_in_care`). 
+
+
+
+```{r}
+
+# accessing list of files in data folder
+files <- list.files("final_report/raw_data/")
+
+# generating list of data frames for each dataset 
+  # for each element in files list
+data_list <- lapply(files, \(file) {
+  
+  # read in data with path concatted
+  read.csv(paste0("final_report/raw_data/", file)) |>
+    
+    # remove unwanted variable name formatting
+    janitor::clean_names() |> 
+    
+    # because multiple datasets have the same variable name, 
+    # we have to identify each (by renaming)
+    rename_with(
+      \(x) 
+      
+      # one solution, add filename to variables 
+      # minus year so they can be merged
+      paste(x, str_remove(
+        
+        # weird regex, but means the "_YEAR" part of filename
+        str_remove(file, "_[0-9]{4}(?=\\.)"), "\\.csv")
+        , sep = "_"),
+      
+      # state and year are same anyway (only matched variable 
+      # names present issue, but code above addresses anyway)
+      .cols = !c(state, year)) 
+}) 
+
+
+
+# replacement variable names
+replace <- c(
+  
+  # constants
+  "state", "year", 
+  
+  # caseworker visits
+  "delete1", "n_case_visits", "delete2", 
+  "pct_home_visit", "n_home_visit", "delete3", 
+  
+  # entered foster care in a given year
+  "n_entered_care", "delete4", 
+  
+  # child fatalities
+  "n_fatality", "fatality_rate",
+  
+  # counts on first day of given year
+  "n_first_day_count", "first_day_median_stay", 
+  
+  # maltreatment while in foster care
+  "pct_maltreat_in_care", "delete5", "n_in_care_check", 
+  
+  # percent maltreatment types
+  "pct_emotional", "pct_medical", "pct_neglect",
+  "pct_physical", "pct_sexual", "pct_traffic",
+  "pct_other_maltreat", "pct_missing_maltreat",  
+  
+  # state population measures
+  "child_populaton", "pct_child_poverty",
+  
+  # placement stability - greater than 24m in care
+  "two_minus_place_gt24","three_plus_place_gt24",           
+  "missing_place_gt24", "n_in_care_place_gt24",   
+  
+  # placement stability - time in care missing
+  "two_minus_place_lenmissing", "three_plus_place_lenmissing",
+  "missing_place_lenmissing", "n_in_care_place_lenmissing",
+  
+  # placement stability - less than 12m in care
+  "two_minus_place_lt12", "three_plus_place_lt12", 
+  "missing_place_lt12", "n_in_care_place_lt12",
+  
+  # placement stability - greater than 12m and less than 24m in care
+  "two_minus_place_lt24", "three_plus_place_lt24",
+  "missing_place_lt24", "n_in_care_place_lt24")
+
+
+# merging list of data frames, swapping replacement var names, dropping vars
+data <- reduce(data_list, bind_rows) |> 
+  group_by(state, year) |> 
+  summarize_all(funs(first(na.omit(.)))) |> 
+  rename_with(~ replace, everything()) |> 
+  select(-contains("delete"))  
+
+```
+
+
+Pivoting on placement stability and lengths of time in care. Placement stability measures include the percent of youth in care in a given year who have two or fewer placements, three or more placements, missing data, and the number of youth in care in that state and year. What concerns our attention here is that all of these variables are stratified by the length of time a youth has been in care - less than 12 months, between 12 and 24 months, greater than 24 months, and missing length data. 
+
+Now, we'll pivot the data such that measures of placement stability are joined together and we have a variable indicating how long they've been in care. 
+
+```{r}
+data <- data |> 
+  
+  # selecting placement stability measures
+  pivot_longer(cols = starts_with(c("two_minus_place", "three_plus_place", "missing_place", "n_in_care_place")), 
+               
+        # creating length of time indicator based on varname
+               names_to = c(".value", "length_in_care"), 
+               
+        # extracted from end of varname (gt24, lt24, lt12, missing)
+               names_pattern = "(.*)_(gt24|lt24|lt12|lenmissing)") %>%
+  
+  # renaming length indicators to be interpretable
+  mutate(length_in_care = case_when(
+    length_in_care == "gt24" ~ "greater than 24m",
+    length_in_care == "lt24" ~ "between 12 and 24m",
+    length_in_care == "lt12" ~ "less than 12m",
+    length_in_care == "lenmissing" ~ "time in care missing"
+  ))
+
+
+```
+
+
+In reference to the note at the beginning of the document, we'll now make a composite measure `n_in_care` putting together `n_in_care_check` and the state and year grouped measure of `n_in_care_place` (this is broken into 4 parts by state and year, so we'll sum within state/year) and then make composite measure. 
+
+```{r}
+data <- data |> 
+  
+  group_by(state, year) |> 
+  mutate(n_in_care_total = sum(n_in_care_place)) |> 
+  ungroup() |>
+  mutate(n_in_care_total = if_else(
+    !is.na(n_in_care_check), n_in_care_check, n_in_care_total
+  )) |> 
+  select(-n_in_care_check)
+  
+```
+
+
+We have placement instability measures stratified by length of stay. I am interested in seeing if length of stay is a meaningful factor in the relationship between maltreatment in foster care and placement instability (though this may be a collider). To make this simpler, we can aggregate across lengths of stay for each state and year. 
+
+```{r}
+
+data <- data |> 
+  group_by(state, year) |> 
+  mutate(two_minus_place_all = ((two_minus_place / 100) * n_in_care_place),
+         two_minus_place_all = (sum(two_minus_place_all) / n_in_care_total), 
+         
+         three_plus_place_all = ((three_plus_place / 100) * n_in_care_place), 
+         three_plus_place_all = (sum(three_plus_place_all) / n_in_care_total))
+
+```
+
+Adding region groupings
+
+```{r}
+regions <- tibble(
+  
+  region = c(rep("Northeast", 9), rep("Midwest", 12), 
+             rep("South", 17), rep("West", 11), 
+             rep("Other", 3)),
+  
+  state = c(
+    
+    # Northeast 
+    "Connecticut", "Maine", "Massachusetts", "New Hampshire",
+    "Rhode Island", "Vermont", "New Jersey", "New York", 
+    "Pennsylvania", 
+    
+    # Midwest
+    "Illinois", "Indiana", "Michigan", "Ohio", 
+    "Wisconsin", "Iowa", "Kansas", "Minnesota",
+    "Missouri", "Nebraska", "North Dakota", "South Dakota",
+    
+    # South
+    "Delaware", "Florida", "Georgia", "Maryland", 
+    "District of Columbia", "West Virginia", "Alabama", 
+    "Kentucky", "Mississippi", "Tennessee", "North Carolina",
+    "South Carolina", "Virginia", "Arkansas", "Louisiana", 
+    "Oklahoma", "Texas", 
+    
+    # West 
+    "Arizona", "Colorado", "Idaho", "Montana", 
+    "Nevada", "New Mexico", "Utah", "Wyoming",
+    "California", "Oregon", "Washington",
+    
+    # Other
+    "Puerto Rico", "Alaska", "Hawaii")
+)
+
+data <- full_join(data, regions, by = "state")
+
+```
+
+
+
+```{r}
+# removing everything except data from memory
+rm(data_list, files, replace, regions)
+```
+
+With the completed dataset prepared, we'll write it back into the `Data/` folder in our project directory to be referenced later. 
+
+```{r}
+write.csv(data, "final_report/clean_data/child_welfare_data.csv", 
+          row.names = FALSE)
+```
+
+
+

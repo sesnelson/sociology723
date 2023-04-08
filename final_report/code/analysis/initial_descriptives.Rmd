@@ -1,0 +1,222 @@
+---
+title: "Initial Descriptives"
+author: "Samuel Snelson"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(geofacet)
+theme_set(theme_light(base_family = "Avenir"))
+```
+
+
+
+```{r}
+
+d <- read.csv("final_report/clean_data/child_welfare_data.csv")
+
+# setting path for figures to be saved
+fig_path <- "final_report/figures/"
+
+```
+
+
+First we'll get a sense of just how many youth are in foster care across states and year. 
+
+There are a few measures of the number of youth in foster care in a state and year. We'll check them against each other. 
+
+We have `n_first_day_count` which is a measure of the number of youth in care on the first day of the fiscal year, October 1. Another is `n_in_care_check` based on the percentage of youth maltreated in foster care in a given year and state. Another is `n_in_care_place` which is based on the percentage of youth who experience different placement frequencies (this one has to be grouped by state and year). 
+
+```{r}
+
+# let's produce some figures showing the trends in foster care populations across these states
+
+(p_fc_pop_overall <- d |>
+  select(year, n_in_care_total) |> 
+  distinct() |> 
+  group_by(year) |> 
+  summarize(total_pop = sum(n_in_care_total)) |> 
+   
+  ggplot(aes(year, total_pop)) +
+  geom_line(linewidth = 1.25, 
+            alpha = 0.5) + 
+  geom_label(aes(label = format(total_pop, 
+                                big.mark = ",")), 
+             position = position_dodge(0.25), 
+             color = "grey25") +
+  
+  labs(title = "Total Population of Youth in Foster Care", 
+       x = "", 
+       y = "", 
+       caption = "Source: Children's Bureau Child Welfare Outcomes Report Data"))
+
+
+# Overall Foster Care Population 
+ggsave(paste0(fig_path, "foster_care_population_overall.png"),
+       plot = p_fc_pop_overall, 
+       width = 7, height = 5, units = "in")
+
+dev.off()
+
+
+# Now let's look at how the foster care population has changed over time
+
+(p_fc_pop_states <- d |> 
+    distinct(state, year, n_in_care_total) |> 
+    filter(! state == "Puerto Rico") |>
+    mutate(n_in_care_scale = n_in_care_total / 1000) |> 
+    ggplot(aes(year, n_in_care_scale)) + 
+    geom_line(color = "firebrick") + 
+    facet_geo(~ state, grid = "us_state_grid1", 
+              scales = "free_y") + 
+    theme(axis.text.y = element_text(size = 12), 
+          axis.text.x = element_text(size = 12, 
+                                     angle = 45, 
+                                     vjust = 0.45), 
+          plot.title = element_text(size = 32, 
+                                    vjust = -3)) + 
+    
+    labs(title = "Total Population of Youth in Foster Care", 
+         x = "Year", 
+         y = "Number of Youth in Foster Care (1000s)", 
+         caption = "Source: Children's Bureau Child Welfare Outcomes Report Data"))
+
+# Foster Care Population by State
+ggsave(paste0(fig_path, "foster_care_population_bystate.png"), 
+              plot = p_fc_pop_states, 
+              width = 20, height = 12, units = "in")
+
+
+# The scaling of the y-axis and size of text is a bit awkward, so we'll return to this bit this is the bulk of the plot we're interested in
+
+
+
+
+```
+
+
+Let's now turn to descriptive statistics on maltreatment in care and placement instability (maybe both aggregated and by length in care)
+
+
+
+```{r}
+
+# lollipop plot 
+
+(p_maltreat_in_care <- d |> 
+   select(state, year, pct_maltreat_in_care) |> 
+   distinct() |> 
+   ggplot(aes(pct_maltreat_in_care, 
+              reorder(state, pct_maltreat_in_care))) + 
+   geom_linerange(aes(xmin = 0, 
+                      xmax = pct_maltreat_in_care), 
+                  color = "firebrick") +
+   geom_point() + 
+   facet_grid(~ year)) 
+
+
+# map
+
+(p_maltreat_in_care <- d |> 
+    select(state, year, pct_maltreat_in_care) |>
+    distinct() |>
+    ggplot(aes(year, pct_maltreat_in_care)) + 
+    geom_line(color = "firebrick") + 
+    facet_geo(~ state, 
+              grid = "us_state_grid1", 
+              scales = "free_y")) 
+
+
+
+
+
+```
+
+
+
+Now for placement instability data
+
+```{r}
+(p_placement_bylength <- d |> 
+   select(state, year, three_plus_place, 
+          two_minus_place, length_in_care) |> 
+   pivot_longer(cols = c(three_plus_place, two_minus_place), 
+                names_to = "place_type", 
+                values_to = "place_instability") |> 
+   ggplot() + 
+   # this would be simpler with a pivot, but not feeling like it
+   geom_line(aes(year, place_instability, 
+                 color = place)) + 
+   facet_geo(~ state, 
+             grid = "us_state_grid1"))
+
+
+
+(p_placement_all <- d |> 
+    select(state, year, three_plus_place_all, two_minus_place_all) |> 
+    
+    ggplot() + 
+    geom_line(aes())
+```
+
+
+
+
+
+
+
+
+
+
+
+
+Let's look at WITHIN-VARIANCE in placement instability and maltreatment in care
+
+
+
+
+
+```{r}
+
+d |> 
+  ggplot(aes(year, three_plus_place_gt24, color = state)) + 
+  geom_line()
+
+d |> 
+  group_by(state) |> 
+  mutate(diff = three_plus_place_gt24 - mean(three_plus_place_gt24), 
+         mean_diff ) |> 
+  ungroup() |> 
+  
+  ggplot(aes(year, diff, color = state)) +
+  geom_line(alpha = 0.5) + 
+  geom_hline(yintercept = 0) +
+  theme(legend.position = "none")
+
+```
+
+
+
+
+
+Let's take a look at BETWEEN-VARIANCE in the placement instability
+
+```{r}
+d |> 
+  select(state, three_plus_place_gt24) |> 
+  drop_na() |> 
+  group_by(state) |> 
+  summarize(instability = mean(three_plus_place_gt24), 
+            se = sqrt((sd(three_plus_place_gt24)) / 5)) |> 
+  
+  ggplot(aes(instability, reorder(state, instability))) + 
+  geom_point() + 
+  geom_linerange(aes(xmax = instability + (2 * se), 
+                     xmin = instability - (2 * se))) + 
+  labs(x = "Percent of ")
+```
+
