@@ -1,0 +1,217 @@
+---
+title: "Initial Descriptives"
+author: "Samuel Snelson"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(geofacet)
+theme_set(theme_light(base_family = "Avenir"))
+```
+
+
+
+
+```{r}
+
+d <- read.csv("final_report/processed_data/child_welfare_data.csv")
+
+# setting path for figures to be saved
+fig_path <- "final_report/figures/"
+
+```
+
+
+First we'll get a sense of just how many youth are in foster care across states and year. 
+
+There are a few measures of the number of youth in foster care in a state and year. We'll check them against each other. 
+
+We have `n_first_day_count` which is a measure of the number of youth in care on the first day of the fiscal year, October 1. Another is `n_in_care_check` based on the percentage of youth maltreated in foster care in a given year and state. Another is `n_in_care_place` which is based on the percentage of youth who experience different placement frequencies (this one has to be grouped by state and year). 
+
+```{r}
+
+# let's produce some figures showing the trends in foster care populations across these states
+
+# setting up options for map plots
+map_options <-  
+  theme(axis.title.x = element_text(size = 18, 
+                                    face = "bold"), 
+        axis.title.y = element_text(size = 18, 
+                                    face = "bold"), 
+        plot.caption = element_text(size = 18),
+        strip.text = element_text(size = 12),
+        axis.text.y = element_text(size = 14), 
+        axis.text.x = element_text(size = 14, 
+                                   angle = 45, 
+                                   vjust = 0.45), 
+        plot.title = element_text(size = 32, 
+                                  vjust = 1, 
+                                  face = "bold"))
+
+
+p_fc_pop_overall <- d |>
+  select(year, n_in_care_total) |> 
+  distinct() |> 
+  group_by(year) |> 
+  summarize(total_pop = sum(n_in_care_total)) |> 
+   
+  ggplot(aes(year, total_pop)) +
+  geom_line(linewidth = 1.25, 
+            alpha = 0.5) + 
+  geom_label(aes(label = format(total_pop, 
+                                big.mark = ",")), 
+             position = position_dodge(0.25), 
+             color = "grey25") +
+  
+  labs(title = "Total Population of Foster Care in US", 
+       x = "Year", 
+       y = "Number of Foster Youth", 
+       caption = "Source: US Children's Bureau Child Welfare Outcomes Report Data")
+
+
+# Overall Foster Care Population 
+ggsave(paste0(fig_path, "foster_care_population_overall.png"),
+       plot = p_fc_pop_overall, 
+       width = 7, height = 5, units = "in")
+
+```
+
+Now let's look at how the foster care population has changed over time
+
+
+```{r}
+
+p_fc_pop_states <- d |> 
+  distinct(state, year, n_in_care_total) |> 
+  filter(state != "Puerto Rico") |>
+  mutate(n_in_care_scale = n_in_care_total / 1000) |> 
+  ggplot(aes(year, n_in_care_scale)) + 
+  geom_line(color = "firebrick") + 
+  facet_geo(~ state, grid = "us_state_grid1", 
+            scales = "free_y") + 
+  
+  labs(title = "Total Population of Foster Care in US", 
+       x = "Year", 
+       y = "Number of Youth in Foster Care (1000s)", 
+       caption = "Source: US Children's Bureau Child Welfare Outcomes Report Data") + 
+  map_options
+
+
+# Foster Care Population by State
+ggsave(paste0(fig_path, "foster_care_population_bystate.png"), 
+       plot = p_fc_pop_states, 
+       width = 20, height = 12, units = "in")
+
+
+# The scaling of the y-axis and size of text is a bit awkward, so we'll return to this bit this is the bulk of the plot we're interested in
+
+
+
+
+```
+
+
+Let's now turn to descriptive statistics on maltreatment in care and placement instability (maybe both aggregated and by length in care)
+
+
+```{r}
+
+# lollipop plot for maltreatment in care 
+
+p_maltreat_in_care_lolli <- d |> 
+  select(state, year, region, pct_maltreat_in_care) |> 
+  distinct() |> 
+  ggplot(aes(pct_maltreat_in_care, 
+             reorder(state, pct_maltreat_in_care))) + 
+  geom_linerange(aes(xmin = 0, 
+                     xmax = pct_maltreat_in_care), 
+                 color = "firebrick", 
+                 linewidth = 3) +
+  geom_point(size = 6) + 
+  facet_grid(~ year) + 
+  labs(title = "Prevalence of Maltreatment in Foster Care", 
+       x = "Percent Maltreated",
+       y = "State", 
+       caption = "Source: US Children's Bureau Child Welfare Outcomes Report Data") + 
+  theme(plot.title = element_text(size = 32, 
+                                  face = "bold"), 
+        axis.title.x = element_text(size = 20), 
+        axis.title.y = element_text(size = 20), 
+        axis.text.x = element_text(size = 20), 
+        axis.text.y = element_text(size = 20), 
+        strip.text = element_text(size = 20), 
+        plot.caption = element_text(size = 20))
+
+ggsave(paste0(fig_path, "pct_maltreated_lollipop.png"), 
+       plot = p_maltreat_in_care_lolli,
+       height = 24, width = 20, units = "in")
+
+
+# map of maltreatment in care
+
+p_maltreat_in_care_map <- d |> 
+  select(state, year, pct_maltreat_in_care) |>
+  filter(state != "Puerto Rico") |> 
+  distinct() |>
+  ggplot(aes(year, pct_maltreat_in_care)) + 
+  geom_line(color = "firebrick") + 
+  facet_geo(~ state, 
+            grid = "us_state_grid1", 
+            scales = "free_y") + 
+  map_options + 
+  
+  #theme(plot.title = element_text(vjust = 1)) +
+    
+  labs(title = "Prevalence of Maltreatment in Foster Care", 
+       x = "Year",
+       y = "Percent of Foster Youth Maltreated", 
+       caption = "Source: US Children's Bureau Child Welfare Outcomes Report Data")
+
+ggsave(paste0(fig_path, "pct_maltreated_map.png"), 
+       plot = p_maltreat_in_care_map,
+       height = 12, width = 20, units = "in")
+
+
+
+
+```
+
+
+
+Now for placement instability data
+
+```{r}
+# Map of placement instability (percent 3+ placement changes) by year
+p_placement_unstable_map <- d |> 
+  select(state, year, three_plus_place_all) |> 
+  distinct() |> 
+  mutate(three_plus_scale = 100 * three_plus_place_all) |> 
+  
+  filter(state != "Puerto Rico") |> 
+  
+  ggplot() + 
+  geom_line(aes(year, three_plus_scale), 
+            color = "firebrick") + 
+  facet_geo(~ state, 
+            grid = "us_state_grid1", 
+            scales = "free_y") + 
+  
+  labs(title = "Percent Foster Youth with 3+ Placements", 
+       x = "Year", 
+       y = "Foster Youth with 3+ Placements", 
+       caption = "Source: US Children's Bureau Child Welfare Outcomes Report Data") +
+  map_options
+
+ggsave(paste0(fig_path, "place_unstable_map.png"), 
+       plot = p_placement_unstable_map, 
+       height = 12, width = 20, units = "in")
+
+
+
+```
+
+
