@@ -1,0 +1,28 @@
+---
+title: "Foster Care Maltreatment and Placement Instability"
+author: "Samuel Snelson"
+output:
+  pdf_document: default
+header-includes: 
+  \usepackage{setspace}\doublespacing
+  
+fontsize: 12pt
+
+abstract: \singlespacing The foster care system in the United States emerged out of increasing public concern for children who experience some form of maltreatment. Research on the prevalence of confirmed maltreatment has largely focused on the relationship between maltreatment and placement into foster care. However, in this paper, I investigate the relationship between maltreatment among youth already in care and placement instability. 
+
+geometry: margin=1in
+spacing: single
+csl: asa.csl
+bibliography: bibliography.bib
+link-citations: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+![Total Population of US Foster Care System, 2017-2021](images/foster_care_population_overall-01.png){width="6.5in"}
+
+![DAG for the Effect of Maltreatment in Foster Care and Placement Instability](images/dag-03.png){width="7in" height="2.91in"}
+
+Here is what we talk about [@yi2020].

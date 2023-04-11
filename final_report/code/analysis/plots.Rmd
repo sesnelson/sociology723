@@ -67,10 +67,13 @@ p_fc_pop_overall <- d |>
              position = position_dodge(0.25), 
              color = "grey25") +
   
-  labs(title = "Total Population of Foster Care in US", 
+  labs(title = "Total Population of Foster Care in US, 2017-2021", 
        x = "Year", 
        y = "Number of Foster Youth", 
-       caption = "Source: US Children's Bureau Child Welfare Outcomes Report Data")
+       caption = "Source: US Children's Bureau Child Welfare Outcomes Report Data") + 
+  theme(plot.title = element_text(face = "bold"), 
+        axis.title.x = element_text(face = "bold"), 
+        axis.title.y = element_text(face = "bold"))
 
 
 # Overall Foster Care Population 
@@ -94,7 +97,7 @@ p_fc_pop_states <- d |>
   facet_geo(~ state, grid = "us_state_grid1", 
             scales = "free_y") + 
   
-  labs(title = "Total Population of Foster Care in US", 
+  labs(title = "Total Population of Foster Care in US, 2017-2021", 
        x = "Year", 
        y = "Number of Youth in Foster Care (1000s)", 
        caption = "Source: US Children's Bureau Child Welfare Outcomes Report Data") + 
@@ -133,7 +136,7 @@ p_maltreat_in_care_lolli <- d |>
                  linewidth = 2) +
   geom_point(size = 6) + 
   facet_grid(~ year) + 
-  labs(title = "Prevalence of Maltreatment in Foster Care", 
+  labs(title = "Prevalence of Maltreatment in Foster Care, 2017-2021", 
        x = "Percent Maltreated",
        y = "State", 
        caption = "Source: US Children's Bureau Child Welfare Outcomes Report Data") + 
@@ -169,7 +172,7 @@ p_maltreat_in_care_map <- d |>
   
   #theme(plot.title = element_text(vjust = 1)) +
     
-  labs(title = "Prevalence of Maltreatment in Foster Care", 
+  labs(title = "Prevalence of Maltreatment in Foster Care, 2017-2021", 
        x = "Year",
        y = "Percent of Foster Youth Maltreated", 
        caption = "Source: US Children's Bureau Child Welfare Outcomes Report Data")
@@ -203,7 +206,7 @@ p_placement_unstable_map <- d |>
             grid = "us_state_grid1", 
             scales = "free_y") + 
   
-  labs(title = "Percent Foster Youth with 3+ Placements", 
+  labs(title = "Percent Foster Youth with 3+ Placements, 2017-2021", 
        x = "Year", 
        y = "Foster Youth with 3+ Placements", 
        caption = "Source: US Children's Bureau Child Welfare Outcomes Report Data") +
@@ -214,6 +217,19 @@ ggsave(paste0(fig_path, "place_unstable_map.png"),
        height = 12, width = 20, units = "in")
 
 
+```
+
+
+```{r}
+# d |> 
+#   select(state, year, region, pct_maltreat_in_care, three_plus_place_all) |> 
+#   
+#   ggplot(aes(pct_maltreat_in_care, three_plus_place_all, 
+#              color = as.factor(year))) + 
+#   geom_point() + 
+#   facet_geo(~ state) +
+#   geom_smooth(method = "lm", 
+#               se = FALSE)
 
 ```
 

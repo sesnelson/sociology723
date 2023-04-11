@@ -53,14 +53,14 @@ NOTES:
 ```{r}
 
 # accessing list of files in data folder
-files <- list.files("final_report/raw_data/")
+files <- list.files("final_report/raw_data/childrens_bureau/")
 
 # generating list of data frames for each dataset 
   # for each element in files list
-data_list <- lapply(files, \(file) {
+bureau_list <- lapply(files, \(file) {
   
   # read in data with path concatted
-  read.csv(paste0("final_report/raw_data/", file)) |>
+  read.csv(paste0("final_report/raw_data/childrens_bureau/", file)) |>
     
     # remove unwanted variable name formatting
     janitor::clean_names() |> 
@@ -133,7 +133,7 @@ replace <- c(
 
 
 # merging list of data frames, swapping replacement var names, dropping vars
-data <- reduce(data_list, bind_rows) |> 
+bureau <- reduce(bureau_list, bind_rows) |> 
   group_by(state, year) |> 
   summarize_all(funs(first(na.omit(.)))) |> 
   rename_with(~ replace, everything()) |> 
@@ -147,7 +147,7 @@ Pivoting on placement stability and lengths of time in care. Placement stability
 Now, we'll pivot the data such that measures of placement stability are joined together and we have a variable indicating how long they've been in care. 
 
 ```{r}
-data <- data |> 
+bureau <- bureau |> 
   
   # selecting placement stability measures
   pivot_longer(cols = starts_with(c("two_minus_place", "three_plus_place", "missing_place", "n_in_care_place")), 
@@ -173,7 +173,7 @@ data <- data |>
 In reference to the note at the beginning of the document, we'll now make a composite measure `n_in_care` putting together `n_in_care_check` and the state and year grouped measure of `n_in_care_place` (this is broken into 4 parts by state and year, so we'll sum within state/year) and then make composite measure. 
 
 ```{r}
-data <- data |> 
+bureau <- bureau |> 
   
   group_by(state, year) |> 
   mutate(n_in_care_total = sum(n_in_care_place)) |> 
@@ -190,7 +190,7 @@ We have placement instability measures stratified by length of stay. I am intere
 
 ```{r}
 
-data <- data |> 
+bureau <- bureau |> 
   group_by(state, year) |> 
   mutate(two_minus_place_all = ((two_minus_place / 100) * n_in_care_place),
          two_minus_place_all = (sum(two_minus_place_all) / n_in_care_total), 
@@ -237,21 +237,48 @@ regions <- tibble(
     "Puerto Rico", "Alaska", "Hawaii")
 )
 
-data <- full_join(data, regions, by = "state")
+bureau <- full_join(bureau, regions, by = "state")
 
 ```
 
 
 
 ```{r}
-# removing everything except data from memory
-rm(data_list, files, replace, regions)
+# removing extraneous bureau data objects from memory
+rm(bureau_list, files, replace, regions)
 ```
 
-With the completed dataset prepared, we'll write it back into the `Data/` folder in our project directory to be referenced later. 
+
+
+Public assistance data from Annie. E Casey Foundation website (https://datacenter.kidscount.org/data/tables/8857-children-in-families-that-receive-public-assistance?loc=1&loct=2#detailed/2/2-53/false/2048,1729,37,871/any/17739,17740).
 
 ```{r}
-write.csv(data, "final_report/clean_data/child_welfare_data.csv", 
+pub_ass <- read.csv("final_report/raw_data/pub_assistance/pub_assistance.csv") |> 
+  
+  # data comes in long format, we'll split num and pct receiving services
+  pivot_wider(names_from = pub_assistance_format, 
+              values_from = pub_assistance_amount) |> 
+  
+  # remove national average and filter on years of interest
+  filter(state != "United States" &
+           year %in% c("2017", "2018", "2019", "2020", "2021")) |> 
+  
+  # scaling percent (30% from 0.3 to 30)
+  mutate(percent_pub_assistance = 100 * percent_pub_assistance)
+```
+
+
+Now we'll merge everything together to get a final data frame with all measures of interest. 
+
+```{r}
+data <- full_join(bureau, pub_ass, by = c("state", "year"))
+```
+
+
+
+
+```{r}
+write.csv(data, "final_report/processed_data/child_welfare_data.csv", 
           row.names = FALSE)
 ```
 

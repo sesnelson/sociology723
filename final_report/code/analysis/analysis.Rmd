@@ -1,0 +1,94 @@
+---
+title: "Analysis of Child Welfare Data"
+author: "Samuel Snelson"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(lme4)
+library(huxtable)
+```
+
+Let's first call our child welfare data
+
+```{r}
+d <- read.csv("final_report/processed_data/child_welfare_data.csv")
+```
+
+```{r}
+glimpse(d)
+```
+
+
+ICC or VPC - how much variance is between states relative to within states
+
+```{r}
+between <- d |> 
+  select(state, pct_maltreat_in_care, three_plus_place_all) |> 
+  group_by(state) |> 
+  mutate(mean_maltreat = mean(pct_maltreat_in_care, na.rm = TRUE),
+         mean_unstable = mean(three_plus_place_all, na.rm = TRUE)) |> 
+  ungroup() |> 
+  summarize(between_var_maltreat = var(mean_maltreat), 
+            between_var_unstable = var(mean_unstable))
+
+# between_var_maltreat   |   between_var_unstable
+#    0.1775845           |      0.005287055
+
+
+within <- d |> 
+  select(state, pct_maltreat_in_care, three_plus_place_all) |> 
+  group_by(state) |> 
+  mutate(dev_maltreat = 
+           pct_maltreat_in_care - mean(pct_maltreat_in_care,
+                                       na.rm = TRUE),
+         dev_unstable = 
+           three_plus_place_all - mean(three_plus_place_all, 
+                                       na.rm = TRUE)) |> 
+  ungroup() |> 
+  summarize(within_maltreat = var(dev_maltreat, 
+                                  na.rm = TRUE), 
+            within_unstable = var(dev_unstable, 
+                                  na.rm = TRUE))
+
+	
+# within_maltreat   |   within_unstable
+#   0.04942246      |   0.0005072629
+
+ICC = tibble(
+  maltreat_icc = between$between_var_maltreat / (between$between_var_maltreat + within$within_maltreat),
+  unstable_icc = between$between_var_unstable / (between$between_var_unstable + within$within_unstable))
+  
+```
+
+About 78% of variance in maltreatment rates in care is between states and about 91% of variance in placement instability is between states. 
+
+Given that there is such a high proportion of variance in both measures between-states, I am apprehensive to only use fixed effects because this will get rid of all between-variance. For this reason, I am thinking about estimating both a fixed and random effects model and comparing their coefficients. 
+
+
+The question of the causes of maltreatment and placement instability are in no way resolved. I will proceed by regarding the percentage of children in poverty in a given state and year as a confounding variable. I will also note that there is some debate as to the relationship between placement instability, reported maltreatment, and caseworker visits. Edwards (2019) and Fong (2020) have recently emphasized the role of Child Protective Services (CPS) contact not as mitigating maltreatment but producing inequalities in maltreatment reporting among marginalized populations. Further work is needed to partition the causal influence of reported maltreatment and CPS contact. In this paper, I assume that relationship between maltreatment and placement instability is mediated, not confounded, by caseworker visits. 
+
+
+
+First we'll estimate a MLM for the effect of maltreatment on placement instability
+
+```{r}
+mlm <- lmer(three_plus_place_all ~ pct_maltreat_in_care + (1 | state), 
+            data = d, 
+            REML = FALSE)
+
+huxreg("Mixed" = mlm, 
+       stars = NULL,
+       error_pos = "right",
+       statistics = c("Resid. SD" = "sigma"),
+       coefs = c("Intercept" = "(Intercept)", 
+                 "Maltreatment" = "pct_maltreat_in_care"))
+
+```
+
+
+
+
