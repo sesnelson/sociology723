@@ -130,7 +130,7 @@ p_maltreat_in_care_lolli <- d |>
   geom_linerange(aes(xmin = 0, 
                      xmax = pct_maltreat_in_care), 
                  color = "firebrick", 
-                 linewidth = 3) +
+                 linewidth = 2) +
   geom_point(size = 6) + 
   facet_grid(~ year) + 
   labs(title = "Prevalence of Maltreatment in Foster Care", 
@@ -139,10 +139,13 @@ p_maltreat_in_care_lolli <- d |>
        caption = "Source: US Children's Bureau Child Welfare Outcomes Report Data") + 
   theme(plot.title = element_text(size = 32, 
                                   face = "bold"), 
-        axis.title.x = element_text(size = 20), 
-        axis.title.y = element_text(size = 20), 
+        axis.title.x = element_text(size = 20, 
+                                    face = "bold"), 
+        axis.title.y = element_text(size = 20, 
+                                    face = "bold"), 
         axis.text.x = element_text(size = 20), 
-        axis.text.y = element_text(size = 20), 
+        axis.text.y = element_text(size = 20, 
+                                   face = "bold"), 
         strip.text = element_text(size = 20), 
         plot.caption = element_text(size = 20))
 
